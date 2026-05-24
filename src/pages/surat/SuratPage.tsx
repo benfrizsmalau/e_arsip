@@ -5,10 +5,10 @@ import {
   Plus, Search, Filter, Edit2, Trash2, X,
   Mail, Send, AlertTriangle, FileText, Inbox,
   CheckCircle2, Clock, Archive, Zap, Hash, BookOpen, Sparkles, PenLine,
-  RefreshCw, FolderOpen,
+  RefreshCw, FolderOpen, FileSpreadsheet, Building2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { syncAllPajak, getLastSyncAt, type SyncSummary } from '@/lib/syncPajak'
+import { syncAllPajak, getLastSyncAt, BPKPAD_ID, type SyncSummary } from '@/lib/syncPajak'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -516,7 +516,7 @@ export default function SuratPage() {
   const { profile } = useAuthStore()
   const navigate = useNavigate()
 
-  const [tab, setTab]           = useState<'masuk' | 'keluar'>('masuk')
+  const [tab, setTab]           = useState<'masuk' | 'keluar' | 'pajak'>('masuk')
   const [search, setSearch]     = useState('')
   const [filterSifat, setFilter] = useState('all')
 
@@ -569,7 +569,24 @@ export default function SuratPage() {
   const { data: keluarList = [], isLoading: loadKeluar } = useQuery({
     queryKey: ['surat_keluar'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('surat_keluar').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase
+        .from('surat_keluar')
+        .select('*')
+        .neq('id_instansi', BPKPAD_ID)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as SuratKeluar[]
+    },
+  })
+
+  const { data: pajakList = [], isLoading: loadPajak } = useQuery({
+    queryKey: ['surat_pajak'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('surat_keluar')
+        .select('*')
+        .eq('id_instansi', BPKPAD_ID)
+        .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as SuratKeluar[]
     },
@@ -678,7 +695,17 @@ export default function SuratPage() {
     return r
   }, [keluarList, search, filterSifat])
 
-  const isLoading = tab === 'masuk' ? loadMasuk : loadKeluar
+  const filteredPajak = useMemo(() => {
+    if (!search) return pajakList
+    const q = search.toLowerCase()
+    return pajakList.filter((s) =>
+      s.nomor_surat.toLowerCase().includes(q) ||
+      s.perihal.toLowerCase().includes(q) ||
+      s.tujuan.toLowerCase().includes(q)
+    )
+  }, [pajakList, search])
+
+  const isLoading = tab === 'masuk' ? loadMasuk : tab === 'keluar' ? loadKeluar : loadPajak
 
   return (
     <>
@@ -689,21 +716,25 @@ export default function SuratPage() {
             <h1 className="text-2xl font-bold text-[#181c1c]" style={{ fontFamily: 'Sora, sans-serif' }}>Buku Agenda Surat</h1>
             <p className="text-sm text-[#6e7977] mt-0.5">Pencatatan surat masuk dan surat keluar</p>
           </div>
-          <Button size="sm" leftIcon={<Plus size={14} />} onClick={() => tab === 'masuk' ? setMasukModal(true) : setKeluarModal(true)}>
-            {tab === 'masuk' ? 'Catat Surat Masuk' : 'Buat Surat Keluar'}
-          </Button>
+          {tab !== 'pajak' && (
+            <Button size="sm" leftIcon={<Plus size={14} />} onClick={() => tab === 'masuk' ? setMasukModal(true) : setKeluarModal(true)}>
+              {tab === 'masuk' ? 'Catat Surat Masuk' : 'Buat Surat Keluar'}
+            </Button>
+          )}
         </div>
 
-        {/* Sync Bar */}
-        <SyncBar syncing={syncing} lastSummary={lastSummary} lastAt={lastAt} onSync={runSync} />
+        {/* Sync Bar — hanya tampil di tab Dokumen Pajak */}
+        {tab === 'pajak' && (
+          <SyncBar syncing={syncing} lastSummary={lastSummary} lastAt={lastAt} onSync={runSync} />
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Total Masuk',  value: masukList.length,  icon: <Inbox size={16} />, color: 'bg-[#dbeafe] text-[#2563eb]' },
-            { label: 'Belum Diproses', value: masukList.filter((s) => s.status === 'baru').length, icon: <Mail size={16} />, color: 'bg-[#fef3c7] text-[#d97706]' },
-            { label: 'Total Keluar', value: keluarList.length, icon: <Send size={16} />, color: 'bg-[#dcfce7] text-[#16a34a]' },
-            { label: 'Terkirim',     value: keluarList.filter((s) => s.status === 'terkirim').length, icon: <Zap size={16} />, color: 'bg-[#ccfbf1] text-[#0f766e]' },
+            { label: 'Total Masuk',     value: masukList.length,  icon: <Inbox size={16} />, color: 'bg-[#dbeafe] text-[#2563eb]' },
+            { label: 'Belum Diproses',  value: masukList.filter((s) => s.status === 'baru').length, icon: <Mail size={16} />, color: 'bg-[#fef3c7] text-[#d97706]' },
+            { label: 'Surat Keluar',    value: keluarList.length, icon: <Send size={16} />, color: 'bg-[#dcfce7] text-[#16a34a]' },
+            { label: 'Dok. Pajak',      value: pajakList.length,  icon: <FileSpreadsheet size={16} />, color: 'bg-[#f3e8ff] text-[#7c3aed]' },
           ].map((s, i) => (
             <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06, type: 'spring', stiffness: 240, damping: 24 }}>
               <Card padding="sm" className="flex items-center gap-3">
@@ -721,15 +752,19 @@ export default function SuratPage() {
         <Card padding="none" className="overflow-hidden">
           {/* Tab bar */}
           <div className="flex border-b border-[#e5e9e7] bg-[#f7faf8]">
-            {(['masuk', 'keluar'] as const).map((t) => (
+            {([
+              { key: 'masuk',  icon: <Inbox size={15} />,          label: 'Surat Masuk' },
+              { key: 'keluar', icon: <Send size={15} />,           label: 'Surat Keluar' },
+              { key: 'pajak',  icon: <FileSpreadsheet size={15} />, label: 'Dokumen Pajak' },
+            ] as { key: 'masuk' | 'keluar' | 'pajak'; icon: React.ReactNode; label: string }[]).map((t) => (
               <button
-                key={t}
-                onClick={() => { setTab(t); setSearch(''); setFilter('all') }}
-                className={`relative flex items-center gap-2 px-6 py-3.5 text-sm font-semibold transition-colors ${tab === t ? 'text-[#0f766e]' : 'text-[#6e7977] hover:text-[#3e4947]'}`}
+                key={t.key}
+                onClick={() => { setTab(t.key); setSearch(''); setFilter('all') }}
+                className={`relative flex items-center gap-2 px-6 py-3.5 text-sm font-semibold transition-colors ${tab === t.key ? 'text-[#0f766e]' : 'text-[#6e7977] hover:text-[#3e4947]'}`}
               >
-                {t === 'masuk' ? <Inbox size={15} /> : <Send size={15} />}
-                Surat {t === 'masuk' ? 'Masuk' : 'Keluar'}
-                {tab === t && <motion.div layoutId="tab-indicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0f766e] rounded-t-full" />}
+                {t.icon}
+                {t.label}
+                {tab === t.key && <motion.div layoutId="tab-indicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0f766e] rounded-t-full" />}
               </button>
             ))}
           </div>
@@ -738,8 +773,18 @@ export default function SuratPage() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 border-b border-[#f1f4f3]">
             <div className="relative flex-1 min-w-0">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977]" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tab === 'masuk' ? 'Cari nomor, perihal, asal...' : 'Cari nomor, perihal, tujuan...'} className="w-full pl-9 pr-3 py-2 rounded-[10px] border border-[#CBD5E1] text-sm focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 bg-white transition-all" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={
+                  tab === 'masuk'  ? 'Cari nomor, perihal, asal...'   :
+                  tab === 'keluar' ? 'Cari nomor, perihal, tujuan...' :
+                                     'Cari nomor, perihal, wajib pajak...'
+                }
+                className="w-full pl-9 pr-3 py-2 rounded-[10px] border border-[#CBD5E1] text-sm focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 bg-white transition-all"
+              />
             </div>
+            {tab !== 'pajak' && (
             <div className="flex items-center gap-1.5">
               <Filter size={13} className="text-[#6e7977]" />
               {['all', 'biasa', 'penting', 'rahasia', 'sangat_segera'].map((val) => {
@@ -747,6 +792,7 @@ export default function SuratPage() {
                 return <button key={val} onClick={() => setFilter(val)} className={`px-3 py-1.5 rounded-[8px] text-xs font-semibold transition-all ${filterSifat === val ? 'bg-[#0f766e] text-white' : 'bg-[#f1f4f3] text-[#6e7977] hover:bg-[#e5e9e7]'}`}>{labels[val]}</button>
               })}
             </div>
+            )}
           </div>
 
           {/* Table */}
@@ -763,17 +809,25 @@ export default function SuratPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-28">Terima</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-28">Sifat</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-32">Status</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-32">Aksi</th>
                         </>
-                      ) : (
+                      ) : tab === 'keluar' ? (
                         <>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-36">No. Agenda</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider">Tujuan / Perihal</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-28">Tanggal</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-28">Sifat</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-36">Status</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-32">Aksi</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-48">Nomor Dokumen</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider">Wajib Pajak / Perihal</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-28">Tanggal</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-36">Jenis</th>
                         </>
                       )}
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-32">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -828,7 +882,7 @@ export default function SuratPage() {
                           </td>
                         </motion.tr>
                       ))
-                    ) : (
+                    ) : tab === 'keluar' ? (
                       filteredKeluar.length === 0 ? (
                         <tr><td colSpan={6}>
                           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -873,6 +927,51 @@ export default function SuratPage() {
                           </td>
                         </motion.tr>
                       ))
+                    ) : (
+                      /* ── Tab Dokumen Pajak ── */
+                      filteredPajak.length === 0 ? (
+                        <tr><td colSpan={4}>
+                          <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <div className="w-14 h-14 rounded-2xl bg-[#f3e8ff] flex items-center justify-center mb-3">
+                              <FileSpreadsheet size={24} className="text-[#7c3aed]" />
+                            </div>
+                            <p className="text-sm font-semibold text-[#181c1c] mb-1">
+                              {search ? 'Tidak ada hasil pencarian' : 'Belum ada dokumen pajak'}
+                            </p>
+                            <p className="text-xs text-[#6e7977] mb-4">
+                              {search ? 'Coba ubah kata kunci pencarian' : 'Klik "Sync Sekarang" untuk mengambil data dari sistem BPKPAD'}
+                            </p>
+                          </div>
+                        </td></tr>
+                      ) : filteredPajak.map((item, i) => {
+                        const jenis = item.perihal.split(' ')[0]
+                        const jenisColor: Record<string, string> = {
+                          SKPD: 'bg-[#dbeafe] text-[#1d4ed8]',
+                          SKRD: 'bg-[#dcfce7] text-[#15803d]',
+                          SSPD: 'bg-[#fef3c7] text-[#b45309]',
+                          SSRD: 'bg-[#f3e8ff] text-[#7c3aed]',
+                        }
+                        return (
+                          <motion.tr key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className="border-b border-[#f1f4f3] hover:bg-[#faf8ff] transition-colors">
+                            <td className="px-4 py-3">
+                              <span className="text-xs font-mono font-bold text-[#7c3aed]">{item.nomor_surat}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium text-[#181c1c] line-clamp-1">{item.perihal}</p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <Building2 size={11} className="text-[#6e7977]" />
+                                <p className="text-xs text-[#6e7977]">{item.tujuan}</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-[#3e4947]">{formatDate(item.tanggal_surat)}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${jenisColor[jenis] ?? 'bg-[#f1f4f3] text-[#6e7977]'}`}>
+                                {jenis}
+                              </span>
+                            </td>
+                          </motion.tr>
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
@@ -884,7 +983,9 @@ export default function SuratPage() {
             <p className="text-xs text-[#6e7977]">
               {tab === 'masuk'
                 ? <span>Menampilkan <span className="font-semibold text-[#181c1c]">{filteredMasuk.length}</span> dari <span className="font-semibold text-[#181c1c]">{masukList.length}</span> surat masuk</span>
-                : <span>Menampilkan <span className="font-semibold text-[#181c1c]">{filteredKeluar.length}</span> dari <span className="font-semibold text-[#181c1c]">{keluarList.length}</span> surat keluar</span>
+                : tab === 'keluar'
+                ? <span>Menampilkan <span className="font-semibold text-[#181c1c]">{filteredKeluar.length}</span> dari <span className="font-semibold text-[#181c1c]">{keluarList.length}</span> surat keluar</span>
+                : <span>Menampilkan <span className="font-semibold text-[#181c1c]">{filteredPajak.length}</span> dari <span className="font-semibold text-[#181c1c]">{pajakList.length}</span> dokumen pajak (BPKPAD)</span>
               }
             </p>
           </div>

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
-const BPKPAD_ID = '431b6594-b84d-4182-a116-70fd79a9a8b4'
+export const BPKPAD_ID = '431b6594-b84d-4182-a116-70fd79a9a8b4'
 const LS_KEY    = 'pajak_sync_last_at'
 
 const supabaseExt = createClient(

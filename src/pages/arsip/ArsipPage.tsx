@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -6,7 +7,7 @@ import {
   X, FileText, Upload, CheckCircle2, AlertTriangle,
   Lock, Shield, ShieldAlert, ShieldOff,
   Archive, Clock, Zap, Star, LayoutGrid, List,
-  FileUp, File, ImageIcon, Loader2
+  FileUp, File, ImageIcon, Loader2, ExternalLink
 } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -27,7 +28,7 @@ import type { Arsip, JRA, Klasifikasi } from '@/types/database'
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ArsipWithRel = Arsip & {
   klasifikasi?: Pick<Klasifikasi, 'kode' | 'nama'> | null
-  jra?: Pick<JRA, 'kode' | 'judul'> | null
+  jra?: Pick<JRA, 'kode' | 'judul' | 'retensi_aktif' | 'retensi_inaktif' | 'nasib_akhir'> | null
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -382,6 +383,45 @@ function DetailPanel({ item, onClose, onEdit }: { item: ArsipWithRel | null; onC
                   <p className="text-sm text-[#181c1c] text-right">{row.value}</p>
                 </div>
               ))}
+              {/* JRA Retensi Info */}
+              {item.jra && (
+                <div className="rounded-xl bg-[#fefce8] border border-[#fde68a] p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Clock size={12} className="text-[#d97706]" />
+                      <span className="text-xs font-bold text-[#d97706] uppercase tracking-wide">Jadwal Retensi</span>
+                    </div>
+                    <Link
+                      to="/jra"
+                      className="flex items-center gap-1 text-xs text-[#d97706] hover:underline font-medium"
+                    >
+                      Buka JRA <ExternalLink size={10} />
+                    </Link>
+                  </div>
+                  <p className="text-xs font-mono font-semibold text-[#181c1c]">{item.jra.kode} — {item.jra.judul}</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-[10px] text-[#6e7977] uppercase tracking-wide">Aktif</p>
+                      <p className="text-sm font-bold text-[#181c1c]">
+                        {item.jra.retensi_aktif != null ? `${item.jra.retensi_aktif} thn` : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#6e7977] uppercase tracking-wide">Inaktif</p>
+                      <p className="text-sm font-bold text-[#181c1c]">
+                        {item.jra.retensi_inaktif != null ? `${item.jra.retensi_inaktif} thn` : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#6e7977] uppercase tracking-wide">Nasib Akhir</p>
+                      <p className="text-sm font-bold text-[#181c1c] capitalize">
+                        {item.jra.nasib_akhir?.replace(/_/g, ' ') ?? '—'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {item.file_url && (
                 <a href={item.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 rounded-xl border border-[#99f6e4] bg-[#f0fdf9] text-[#0f766e] text-sm font-semibold hover:bg-[#ccfbf1] transition-colors">
                   <FileText size={15} /> Lihat File Digital
@@ -413,7 +453,7 @@ export default function ArsipPage() {
   const { data: arsipList = [], isLoading } = useQuery({
     queryKey: ['arsip'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('arsip').select('*, klasifikasi(kode, nama), jra(kode, judul)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('arsip').select('*, klasifikasi(kode, nama), jra(kode, judul, retensi_aktif, retensi_inaktif, nasib_akhir)').order('created_at', { ascending: false })
       if (error) return []
       return (data as ArsipWithRel[]) ?? []
     },

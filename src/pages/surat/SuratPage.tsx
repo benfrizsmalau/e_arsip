@@ -5,8 +5,9 @@ import {
   Plus, Search, Filter, Edit2, Trash2, X,
   Mail, Send, AlertTriangle, FileText, Inbox,
   CheckCircle2, Clock, Archive, Zap, Hash, BookOpen, Sparkles, PenLine,
-  RefreshCw
+  RefreshCw, FolderOpen,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { syncAllPajak, getLastSyncAt, type SyncSummary } from '@/lib/syncPajak'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -18,7 +19,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { useToast } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
-import { formatDate, generateNomorAgenda } from '@/lib/utils'
+import { formatDate, generateNomorAgenda, generateNomorArsip } from '@/lib/utils'
 import type { SuratMasuk, SuratKeluar } from '@/types/database'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -148,6 +149,7 @@ function KeluarModal({ open, onClose, editing, onSave }: {
   const [klasifikasiList, setKlasifikasiList] = useState<{ id: string; kode: string; nama: string }[]>([])
   const [previewNomor, setPreviewNomor]       = useState<string | null>(null)
   const [loadingPreview, setLoadingPreview]   = useState(false)
+  const [linkedJRA, setLinkedJRA] = useState<{ kode: string; judul: string; retensi_aktif: number | null; retensi_inaktif: number | null; nasib_akhir: string | null }[]>([])
 
   const { register, handleSubmit, reset, watch, setError, formState: { errors, isSubmitting } } = useForm<KeluarForm>({
     resolver: zodResolver(keluarSchema),
@@ -174,6 +176,16 @@ function KeluarModal({ open, onClose, editing, onSave }: {
       .then(({ data }) => setPreviewNomor(data as string | null))
       .finally(() => setLoadingPreview(false))
   }, [watchedKlas, profile?.id_instansi, editing, nomorMode])
+
+  // Fetch JRA linked to selected klasifikasi
+  useEffect(() => {
+    if (!watchedKlas) { setLinkedJRA([]); return }
+    supabase.from('jra')
+      .select('kode, judul, retensi_aktif, retensi_inaktif, nasib_akhir')
+      .eq('id_klasifikasi', watchedKlas)
+      .order('kode')
+      .then(({ data }) => setLinkedJRA((data ?? []) as typeof linkedJRA))
+  }, [watchedKlas])
 
   async function submit(d: KeluarForm) {
     let nomor_surat = editing?.nomor_surat ?? ''
@@ -336,6 +348,29 @@ function KeluarModal({ open, onClose, editing, onSave }: {
                       </div>
                     </div>
                   )}
+
+                  {/* JRA Retensi Info */}
+                  {linkedJRA.length > 0 && (
+                    <div className="rounded-[10px] bg-[#fefce8] border border-[#fde68a] p-3 space-y-1.5">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Clock size={12} className="text-[#d97706]" />
+                        <span className="text-xs font-bold text-[#d97706] uppercase tracking-wide">Jadwal Retensi Terkait</span>
+                      </div>
+                      {linkedJRA.map((jra) => (
+                        <div key={jra.kode} className="text-xs text-[#3e4947]">
+                          <span className="font-mono font-semibold text-[#181c1c]">{jra.kode}</span>
+                          <span className="mx-1 text-[#6e7977]">—</span>
+                          <span>{jra.judul}</span>
+                          <span className="ml-2 text-[#6e7977]">
+                            Aktif <strong>{jra.retensi_aktif ?? '—'}</strong> thn / Inaktif <strong>{jra.retensi_inaktif ?? '—'}</strong> thn
+                          </span>
+                          {jra.nasib_akhir && (
+                            <span className="ml-1 capitalize text-[#d97706] font-medium">→ {jra.nasib_akhir.replace(/_/g, ' ')}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -479,6 +514,7 @@ export default function SuratPage() {
   const qc = useQueryClient()
   const { success: showSuccess, error: showError } = useToast()
   const { profile } = useAuthStore()
+  const navigate = useNavigate()
 
   const [tab, setTab]           = useState<'masuk' | 'keluar'>('masuk')
   const [search, setSearch]     = useState('')
@@ -587,6 +623,44 @@ export default function SuratPage() {
     },
     onSuccess: (_, vars) => { qc.invalidateQueries({ queryKey: [vars.type === 'masuk' ? 'surat_masuk' : 'surat_keluar'] }); showSuccess('Berhasil', 'Surat dihapus') },
     onError: (e) => showError('Gagal', e instanceof Error ? e.message : 'Terjadi kesalahan'),
+  })
+
+  const arsipkanMut = useMutation({
+    mutationFn: async ({ surat, type }: { surat: SuratMasuk | SuratKeluar; type: 'masuk' | 'keluar' }) => {
+      const { count } = await supabase.from('arsip').select('*', { count: 'exact', head: true })
+      const nomor = generateNomorArsip(new Date().getFullYear(), (count ?? 0) + 1)
+      let arsipPayload: Record<string, unknown>
+      if (type === 'masuk') {
+        const s = surat as SuratMasuk
+        arsipPayload = {
+          nomor_arsip: nomor, judul: s.perihal, nomor_surat: s.nomor_surat,
+          tanggal_surat: s.tanggal_surat, pengirim: s.asal_surat,
+          tingkat_keamanan: s.sifat === 'rahasia' ? 'rahasia' : 'biasa',
+          media_simpan: 'fisik', status: 'aktif', jumlah: 1,
+          id_instansi: s.id_instansi, created_by: profile?.id ?? null,
+        }
+      } else {
+        const s = surat as SuratKeluar
+        arsipPayload = {
+          nomor_arsip: nomor, judul: s.perihal, nomor_surat: s.nomor_surat,
+          tanggal_surat: s.tanggal_surat,
+          tingkat_keamanan: s.sifat === 'rahasia' ? 'rahasia' : 'biasa',
+          media_simpan: 'fisik', status: 'aktif', jumlah: 1,
+          id_klasifikasi: (s as any).id_klasifikasi ?? null,
+          id_instansi: s.id_instansi, created_by: profile?.id ?? null,
+        }
+      }
+      const { data: newArsip, error: arsipErr } = await supabase.from('arsip').insert(arsipPayload).select('id').single()
+      if (arsipErr) throw arsipErr
+      const table = type === 'masuk' ? 'surat_masuk' : 'surat_keluar'
+      const { error: updateErr } = await supabase.from(table).update({ status: 'diarsipkan', id_arsip: newArsip.id }).eq('id', surat.id)
+      if (updateErr) throw updateErr
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: [vars.type === 'masuk' ? 'surat_masuk' : 'surat_keluar'] })
+      showSuccess('Berhasil', 'Surat diarsipkan — lihat di menu Pemberkasan Arsip')
+    },
+    onError: (e) => showError('Gagal mengarsipkan', e instanceof Error ? e.message : 'Terjadi kesalahan'),
   })
 
   // ── Filtered ──
@@ -699,7 +773,7 @@ export default function SuratPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-36">Status</th>
                         </>
                       )}
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-24">Aksi</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-[#6e7977] uppercase tracking-wider w-32">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -744,6 +818,10 @@ export default function SuratPage() {
                           <td className="px-4 py-3">{masukStatusBadge(item.status)}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {item.id_arsip
+                                ? <button onClick={() => navigate('/arsip')} className="p-1.5 rounded-lg bg-[#f0fdfa] text-[#0f766e]" title="Lihat Arsip"><FolderOpen size={14} /></button>
+                                : <button onClick={() => arsipkanMut.mutate({ surat: item, type: 'masuk' })} disabled={arsipkanMut.isPending} className="p-1.5 rounded-lg hover:bg-[#f0fdfa] text-[#6e7977] hover:text-[#0f766e] disabled:opacity-40" title="Arsipkan"><Archive size={14} /></button>
+                              }
                               <button onClick={() => { setEditMasuk(item); setMasukModal(true) }} className="p-1.5 rounded-lg hover:bg-[#fef9c3] text-[#6e7977] hover:text-[#d97706]" title="Edit"><Edit2 size={14} /></button>
                               <button onClick={() => setDeleting({ id: item.id, label: `${item.nomor_agenda} — ${item.perihal}`, type: 'masuk' })} className="p-1.5 rounded-lg hover:bg-[#ffdad6] text-[#6e7977] hover:text-[#ba1a1a]" title="Hapus"><Trash2 size={14} /></button>
                             </div>
@@ -785,6 +863,10 @@ export default function SuratPage() {
                           <td className="px-4 py-3">{keluarStatusBadge(item.status)}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {item.id_arsip
+                                ? <button onClick={() => navigate('/arsip')} className="p-1.5 rounded-lg bg-[#f0fdfa] text-[#0f766e]" title="Lihat Arsip"><FolderOpen size={14} /></button>
+                                : <button onClick={() => arsipkanMut.mutate({ surat: item, type: 'keluar' })} disabled={arsipkanMut.isPending} className="p-1.5 rounded-lg hover:bg-[#f0fdfa] text-[#6e7977] hover:text-[#0f766e] disabled:opacity-40" title="Arsipkan"><Archive size={14} /></button>
+                              }
                               <button onClick={() => { setEditKeluar(item); setKeluarModal(true) }} className="p-1.5 rounded-lg hover:bg-[#fef9c3] text-[#6e7977] hover:text-[#d97706]" title="Edit"><Edit2 size={14} /></button>
                               <button onClick={() => setDeleting({ id: item.id, label: `${item.nomor_agenda} — ${item.perihal}`, type: 'keluar' })} className="p-1.5 rounded-lg hover:bg-[#ffdad6] text-[#6e7977] hover:text-[#ba1a1a]" title="Hapus"><Trash2 size={14} /></button>
                             </div>

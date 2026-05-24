@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import {
   FolderArchive, TrendingUp, Shield, Clock, Activity,
-  Upload, ArrowRight, FileText, Mail,
+  Upload, ArrowRight, FileText, Mail, Inbox, Send,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/authStore'
@@ -22,6 +22,9 @@ interface Stats {
   arsipAktif: number
   arsipVital: number
   uploadBulanIni: number
+  totalSuratMasuk: number
+  suratMasukBaru: number
+  totalSuratKeluar: number
 }
 
 interface MonthlyPoint { bulan: string; arsip: number }
@@ -47,7 +50,7 @@ const cardVariants = {
 
 export default function DashboardPage() {
   const { karyawan } = useAuthStore()
-  const [stats, setStats] = useState<Stats>({ totalArsip: 0, arsipAktif: 0, arsipVital: 0, uploadBulanIni: 0 })
+  const [stats, setStats] = useState<Stats>({ totalArsip: 0, arsipAktif: 0, arsipVital: 0, uploadBulanIni: 0, totalSuratMasuk: 0, suratMasukBaru: 0, totalSuratKeluar: 0 })
   const [recentArsip, setRecentArsip]     = useState<Arsip[]>([])
   const [monthlyData, setMonthlyData]     = useState<MonthlyPoint[]>([])
   const [statusData, setStatusData]       = useState<StatusPoint[]>([])
@@ -68,6 +71,9 @@ export default function DashboardPage() {
         { count: vital },
         { count: bulanIni },
         { data: allArsip },
+        { count: totalSuratMasuk },
+        { count: suratMasukBaru },
+        { count: totalSuratKeluar },
       ] = await Promise.all([
         supabase.from('arsip').select('*').order('created_at', { ascending: false }).limit(5),
         supabase.from('arsip').select('*', { count: 'exact', head: true }),
@@ -75,13 +81,19 @@ export default function DashboardPage() {
         supabase.from('arsip').select('*', { count: 'exact', head: true }).eq('status', 'vital'),
         supabase.from('arsip').select('*', { count: 'exact', head: true }).gte('created_at', startOfMonth),
         supabase.from('arsip').select('status, pengirim, created_at'),
+        supabase.from('surat_masuk').select('*', { count: 'exact', head: true }),
+        supabase.from('surat_masuk').select('*', { count: 'exact', head: true }).eq('status', 'baru'),
+        supabase.from('surat_keluar').select('*', { count: 'exact', head: true }),
       ])
 
       setStats({
-        totalArsip:    total        ?? 0,
-        arsipAktif:    aktif        ?? 0,
-        arsipVital:    vital        ?? 0,
-        uploadBulanIni: bulanIni    ?? 0,
+        totalArsip:     total           ?? 0,
+        arsipAktif:     aktif           ?? 0,
+        arsipVital:     vital           ?? 0,
+        uploadBulanIni: bulanIni        ?? 0,
+        totalSuratMasuk: totalSuratMasuk ?? 0,
+        suratMasukBaru:  suratMasukBaru  ?? 0,
+        totalSuratKeluar: totalSuratKeluar ?? 0,
       })
 
       if (recentData) setRecentArsip(recentData)
@@ -210,6 +222,36 @@ export default function DashboardPage() {
           iconColor="text-[#7c3aed]"
         />
       </div>
+
+      {/* Surat Stats */}
+      <motion.div variants={cardVariants}>
+        <Link to="/surat">
+          <Card padding="sm" className="hover:shadow-md transition-all border border-transparent hover:border-[#99f6e4] cursor-pointer">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Mail size={14} className="text-[#0f766e]" />
+                <span className="text-sm font-semibold text-[#181c1c]">Buku Agenda Surat</span>
+              </div>
+              <span className="flex items-center gap-1 text-xs text-[#0f766e] font-medium">
+                Lihat semua <ArrowRight size={12} />
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { icon: <Inbox size={14} />, bg: 'bg-[#dbeafe]', color: 'text-[#2563eb]', value: stats.totalSuratMasuk, label: 'Total Masuk' },
+                { icon: <Mail size={14} />,  bg: 'bg-[#fef3c7]', color: 'text-[#d97706]', value: stats.suratMasukBaru,  label: 'Belum Diproses' },
+                { icon: <Send size={14} />,  bg: 'bg-[#dcfce7]', color: 'text-[#16a34a]', value: stats.totalSuratKeluar, label: 'Total Keluar' },
+              ].map((s) => (
+                <div key={s.label} className="flex flex-col items-center text-center gap-1.5">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${s.bg} ${s.color}`}>{s.icon}</div>
+                  <p className="text-lg font-bold text-[#181c1c]" style={{ fontFamily: 'Sora, sans-serif' }}>{s.value}</p>
+                  <p className="text-xs text-[#6e7977]">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Link>
+      </motion.div>
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

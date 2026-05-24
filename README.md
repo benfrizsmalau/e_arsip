@@ -1,73 +1,85 @@
-# React + TypeScript + Vite
+# E-Arsip Mamberamo Raya
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistem Informasi Manajemen Arsip Digital Pemerintah Kabupaten Mamberamo Raya, Provinsi Papua.
 
-Currently, two official plugins are available:
+## Fitur Utama
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Dashboard** — Statistik arsip real-time: total dokumen, arsip aktif, vital, dan upload bulan ini
+- **Buku Agenda Surat** — Pencatatan surat masuk & keluar dengan penomoran otomatis; sync otomatis data pajak BPKPAD (SKPD/SKRD/SSPD/SSRD)
+- **Manajemen Arsip** — Upload, pencarian, dan pengelolaan dokumen arsip digital
+- **Jadwal Retensi Arsip (JRA)** — Pengelolaan jadwal retensi sesuai klasifikasi arsip
+- **Laporan** — Rekap arsip per OPD/instansi
+- **Admin Panel** — Manajemen pengguna, OPD, dan pengaturan sistem
 
-## React Compiler
+## Teknologi
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Layer | Stack |
+|---|---|
+| Frontend | React 19 + TypeScript + Vite |
+| Styling | Tailwind CSS + Framer Motion |
+| State | TanStack Query + Zustand |
+| Backend | Supabase (PostgreSQL + Auth + Storage) |
+| Form | React Hook Form + Zod |
 
-## Expanding the ESLint configuration
+## Screenshots
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Halaman Login
+![Login](screenshots/01-login.png)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Dashboard
+![Dashboard](screenshots/02-dashboard.png)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Buku Agenda Surat
+![Surat](screenshots/03-surat.png)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Manajemen Arsip
+![Arsip](screenshots/04-arsip.png)
+
+### Jadwal Retensi Arsip
+![JRA](screenshots/05-jra.png)
+
+### Admin Dashboard
+![Admin Dashboard](screenshots/06-admin-dashboard.png)
+
+### Laporan
+![Laporan](screenshots/07-laporan.png)
+
+## Instalasi
+
+```bash
+# Clone repo
+git clone https://github.com/benfrizsmalau/e_arsip.git
+cd e_arsip
+
+# Install dependencies
+npm install
+
+# Salin dan isi environment variables
+cp .env.example .env
+
+# Jalankan development server
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Environment Variables
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Salin `.env.example` menjadi `.env` dan isi dengan kredensial Supabase:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+
+# Opsional: untuk sync data pajak BPKPAD
+VITE_EXT_SUPABASE_URL=https://your-external-project.supabase.co
+VITE_EXT_SUPABASE_SERVICE_KEY=your-service-role-key
 ```
+
+## Build Production
+
+```bash
+npm run build
+```
+
+---
+
+© 2026 Pemerintah Kabupaten Mamberamo Raya

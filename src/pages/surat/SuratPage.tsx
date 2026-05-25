@@ -47,6 +47,16 @@ type KeluarForm = z.infer<typeof keluarSchema>
 type NomorMode = 'otomatis' | 'manual'
 type KeluarFormWithNomor = KeluarForm & { nomor_surat: string }
 
+// ─── Tujuan helpers (supports JSON-array or legacy plain string) ─────────────
+function parseTujuanToTags(val: string): string[] {
+  if (!val) return []
+  try {
+    const parsed = JSON.parse(val)
+    if (Array.isArray(parsed)) return parsed.filter(Boolean)
+  } catch { /* not JSON */ }
+  return [val]
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const sifatBadge = (sifat: string) => {
   const map: Record<string, { v: 'neutral' | 'warning' | 'error' | 'purple'; l: string }> = {
@@ -55,7 +65,7 @@ const sifatBadge = (sifat: string) => {
     rahasia:       { v: 'error',   l: 'Rahasia' },
     sangat_segera: { v: 'purple',  l: 'Sangat Segera' },
   }
-  const { v, l } = map[sifat] ?? { v: 'neutral', l: sifat }
+  const { v, l } = Object.hasOwn(map, sifat) ? map[sifat] : { v: 'neutral' as const, l: sifat }
   return <Badge variant={v} size="sm">{l}</Badge>
 }
 
@@ -66,18 +76,19 @@ const masukStatusBadge = (s: string) => {
     selesai:     { v: 'success', l: 'Selesai',    icon: <CheckCircle2 size={11} /> },
     diarsipkan:  { v: 'neutral', l: 'Diarsipkan', icon: <Archive size={11} /> },
   }
-  const { v, l, icon } = map[s] ?? { v: 'neutral', l: s, icon: null }
+  const { v, l, icon } = Object.hasOwn(map, s) ? map[s] : { v: 'neutral' as const, l: s, icon: null }
   return <Badge variant={v} size="sm">{icon} {l}</Badge>
 }
 
 const keluarStatusBadge = (s: string) => {
-  const map: Record<string, { v: 'neutral' | 'warning' | 'success' | 'info'; l: string; icon: React.ReactNode }> = {
-    draft:        { v: 'neutral', l: 'Draft',         icon: <FileText size={11} /> },
-    menunggu_ttd: { v: 'warning', l: 'Menunggu TTD',  icon: <Clock size={11} /> },
-    terkirim:     { v: 'success', l: 'Terkirim',      icon: <Send size={11} /> },
-    diarsipkan:   { v: 'info',    l: 'Diarsipkan',    icon: <Archive size={11} /> },
-  }
-  const { v, l, icon } = map[s] ?? { v: 'neutral', l: s, icon: null }
+  type E = { v: 'neutral' | 'warning' | 'success' | 'info'; l: string; icon: React.ReactNode }
+  const entries: [string, E][] = [
+    ['draft',        { v: 'neutral', l: 'Draft',        icon: <FileText size={11} /> }],
+    ['menunggu_ttd', { v: 'warning', l: 'Menunggu TTD', icon: <Clock size={11} /> }],
+    ['terkirim',     { v: 'success', l: 'Terkirim',     icon: <Send size={11} /> }],
+    ['diarsipkan',   { v: 'info',    l: 'Diarsipkan',   icon: <Archive size={11} /> }],
+  ]
+  const { v, l, icon } = entries.find(([k]) => k === s)?.[1] ?? { v: 'neutral' as const, l: s, icon: null }
   return <Badge variant={v} size="sm">{icon} {l}</Badge>
 }
 
@@ -138,6 +149,67 @@ function MasukModal({ open, onClose, editing, onSave }: {
   )
 }
 
+// ─── TujuanTagInput ───────────────────────────────────────────────────────────
+function TujuanTagInput({ tags, onChange, error }: {
+  tags: string[]
+  onChange: (tags: string[]) => void
+  error?: string
+}) {
+  const [inputVal, setInputVal] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const addTag = (val: string) => {
+    const trimmed = val.trim()
+    if (trimmed && !tags.includes(trimmed)) onChange([...tags, trimmed])
+    setInputVal('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); addTag(inputVal) }
+    else if ((e.key === ',' || e.key === ';') && inputVal) { e.preventDefault(); addTag(inputVal) }
+    else if (e.key === 'Backspace' && !inputVal && tags.length > 0) onChange(tags.slice(0, -1))
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold text-[#181c1c] uppercase tracking-wider">
+        Tujuan <span className="text-[#ba1a1a]">*</span>
+      </label>
+      <div
+        onClick={() => inputRef.current?.focus()}
+        className={`min-h-[42px] w-full rounded-[10px] border ${error ? 'border-[#ba1a1a] ring-2 ring-[#ba1a1a]/15' : 'border-[#CBD5E1] focus-within:border-[#0f766e] focus-within:ring-2 focus-within:ring-[#0f766e]/15'} bg-white px-3 py-2 flex flex-wrap gap-1.5 transition-all cursor-text`}
+      >
+        {tags.map((tag, i) => (
+          <span key={i} className="inline-flex items-center gap-1 bg-[#f0fdf4] text-[#15803d] text-xs font-semibold px-2.5 py-1 rounded-full border border-[#bbf7d0]">
+            <span className="truncate max-w-[180px]">{tag}</span>
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onChange(tags.filter((_, j) => j !== i)) }}
+              className="flex-shrink-0 text-[#15803d] hover:text-[#ba1a1a] transition-colors"
+            >
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputVal}
+          onChange={e => setInputVal(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={() => { if (inputVal.trim()) addTag(inputVal) }}
+          placeholder={tags.length === 0 ? 'Ketik nama instansi/pejabat, tekan Enter' : 'Tambah tujuan lain...'}
+          className="flex-1 min-w-[160px] outline-none text-sm text-[#181c1c] placeholder:text-[#bdc9c6] bg-transparent py-0.5"
+        />
+      </div>
+      {error && <p className="text-xs text-[#ba1a1a]">⚠ {error}</p>}
+      <p className="text-[11px] text-[#6e7977]">
+        {tags.length > 0 ? `${tags.length} tujuan • ` : ''}Tekan Enter atau koma (,) untuk menambah tujuan
+      </p>
+    </div>
+  )
+}
+
 // ─── Surat Keluar Modal ───────────────────────────────────────────────────────
 function KeluarModal({ open, onClose, editing, onSave }: {
   open: boolean; onClose: () => void; editing: SuratKeluar | null
@@ -150,8 +222,9 @@ function KeluarModal({ open, onClose, editing, onSave }: {
   const [previewNomor, setPreviewNomor]       = useState<string | null>(null)
   const [loadingPreview, setLoadingPreview]   = useState(false)
   const [linkedJRA, setLinkedJRA] = useState<{ kode: string; judul: string; retensi_aktif: number | null; retensi_inaktif: number | null; nasib_akhir: string | null }[]>([])
+  const [tujuanTags, setTujuanTags] = useState<string[]>([])
 
-  const { register, handleSubmit, reset, watch, setError, formState: { errors, isSubmitting } } = useForm<KeluarForm>({
+  const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors, isSubmitting } } = useForm<KeluarForm>({
     resolver: zodResolver(keluarSchema),
     defaultValues: editing
       ? { tujuan: editing.tujuan, id_klasifikasi: (editing as any).id_klasifikasi ?? '', tanggal_surat: editing.tanggal_surat, perihal: editing.perihal, sifat: editing.sifat, penandatangan: editing.penandatangan ?? '', nomor_surat_manual: editing.nomor_surat ?? '' }
@@ -159,6 +232,18 @@ function KeluarModal({ open, onClose, editing, onSave }: {
   })
 
   const watchedKlas = watch('id_klasifikasi')
+
+  // Initialize tujuan tags when editing changes
+  useEffect(() => {
+    const tags = editing ? parseTujuanToTags(editing.tujuan) : []
+    setTujuanTags(tags)
+    setValue('tujuan', tags.length > 0 ? JSON.stringify(tags) : '', { shouldValidate: false })
+  }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync tujuan tags → form field value
+  useEffect(() => {
+    setValue('tujuan', tujuanTags.length > 0 ? JSON.stringify(tujuanTags) : '', { shouldValidate: false })
+  }, [tujuanTags, setValue])
 
   // Load klasifikasi list once
   useEffect(() => {
@@ -211,8 +296,11 @@ function KeluarModal({ open, onClose, editing, onSave }: {
       }
     }
 
-    await onSave({ ...d, nomor_surat })
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { nomor_surat_manual: _omit, ...rest } = d
+    await onSave({ ...rest, nomor_surat })
     reset()
+    setTujuanTags([])
     setPreviewNomor(null)
     setNomorMode('otomatis')
     onClose()
@@ -232,7 +320,7 @@ function KeluarModal({ open, onClose, editing, onSave }: {
       if (!groups[g]) groups[g] = []
       groups[g].push(k)
     })
-    return Object.entries(groups).map(([g, items]) => ({ label: labels[g] ?? g + 'xx', items }))
+    return Object.entries(groups).map(([g, items]) => ({ label: Object.hasOwn(labels, g) ? labels[g] : g + 'xx', items }))
   }, [klasifikasiList])
 
   return (
@@ -406,7 +494,7 @@ function KeluarModal({ open, onClose, editing, onSave }: {
               )}
               </AnimatePresence>
 
-              <Input label="Tujuan" placeholder="Nama instansi atau pejabat tujuan" required error={errors.tujuan?.message} {...register('tujuan')} />
+              <TujuanTagInput tags={tujuanTags} onChange={setTujuanTags} error={errors.tujuan?.message} />
               <Input label="Tanggal Surat" type="date" required error={errors.tanggal_surat?.message} {...register('tanggal_surat')} />
               <Input label="Perihal" placeholder="Isi singkat surat" required error={errors.perihal?.message} {...register('perihal')} />
 
@@ -569,10 +657,12 @@ export default function SuratPage() {
   const { data: keluarList = [], isLoading: loadKeluar } = useQuery({
     queryKey: ['surat_keluar'],
     queryFn: async () => {
+      // Manual surat keluar always have nomor_agenda prefixed 'SK-' (from generateNomorAgenda).
+      // Pajak sync docs never use this prefix. This is the only RLS-safe differentiator.
       const { data, error } = await supabase
         .from('surat_keluar')
         .select('*')
-        .neq('id_instansi', BPKPAD_ID)
+        .like('nomor_agenda', 'SK-%')
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as SuratKeluar[]
@@ -586,6 +676,7 @@ export default function SuratPage() {
         .from('surat_keluar')
         .select('*')
         .eq('id_instansi', BPKPAD_ID)
+        .not('nomor_agenda', 'like', 'SK-%')
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as SuratKeluar[]
@@ -609,23 +700,44 @@ export default function SuratPage() {
 
   const saveKeluarMut = useMutation({
     mutationFn: async ({ data, id }: { data: KeluarFormWithNomor; id?: string }) => {
-      const nomor_agenda = id ? undefined : generateNomorAgenda('SK', new Date().getFullYear(), keluarList.length + 1)
       const { id_klasifikasi, nomor_surat, penandatangan, ...rest } = data
-      const payload = {
+      const basePayload = {
         ...rest,
         nomor_surat,
         penandatangan: penandatangan || null,
         id_klasifikasi: id_klasifikasi || null,
-        ...(nomor_agenda ? { nomor_agenda } : {}),
         ...(profile?.id ? { created_by: profile.id } : {}),
         ...(profile?.id_instansi ? { id_instansi: profile.id_instansi } : {}),
         ...(id ? {} : { status: 'draft' as const }),
       }
       if (id) {
-        const { data: updated, error } = await supabase.from('surat_keluar').update(payload).eq('id', id).select('id')
+        const { data: updated, error } = await supabase.from('surat_keluar').update(basePayload).eq('id', id).select('id')
         if (error) throw error
         if (!updated?.length) throw new Error('Gagal menyimpan: akses ditolak database (RLS). Hubungi administrator.')
-      } else { const { error } = await supabase.from('surat_keluar').insert(payload); if (error) throw error }
+      } else {
+        // Generate nomor_agenda with retry: if a sequence slot is taken (e.g. by a
+        // record invisible to RLS), keep incrementing until an empty slot is found.
+        const year = new Date().getFullYear()
+        const prefix = `SK-${year}-`
+        const { data: last } = await supabase
+          .from('surat_keluar')
+          .select('nomor_agenda')
+          .like('nomor_agenda', `${prefix}%`)
+          .order('nomor_agenda', { ascending: false })
+          .limit(1)
+        const lastSeq = last?.[0]?.nomor_agenda
+          ? parseInt(last[0].nomor_agenda.replace(prefix, ''), 10)
+          : 0
+        let seq = (isNaN(lastSeq) ? 0 : lastSeq) + 1
+        let inserted = false
+        while (!inserted) {
+          const nomor_agenda = `${prefix}${String(seq).padStart(4, '0')}`
+          const { error } = await supabase.from('surat_keluar').insert({ ...basePayload, nomor_agenda })
+          if (!error) { inserted = true; break }
+          if (error.code === '23505') { seq++; continue } // duplicate → try next
+          throw error
+        }
+      }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['surat_keluar'] }); showSuccess('Berhasil', 'Surat keluar disimpan') },
     onError: (e) => showError('Gagal', e instanceof Error ? e.message : 'Terjadi kesalahan'),
@@ -690,7 +802,7 @@ export default function SuratPage() {
 
   const filteredKeluar = useMemo(() => {
     let r = keluarList
-    if (search) { const q = search.toLowerCase(); r = r.filter((s) => s.nomor_agenda.toLowerCase().includes(q) || s.perihal.toLowerCase().includes(q) || s.tujuan.toLowerCase().includes(q)) }
+    if (search) { const q = search.toLowerCase(); r = r.filter((s) => s.nomor_agenda.toLowerCase().includes(q) || s.perihal.toLowerCase().includes(q) || parseTujuanToTags(s.tujuan).join(' ').toLowerCase().includes(q)) }
     if (filterSifat !== 'all') r = r.filter((s) => s.sifat === filterSifat)
     return r
   }, [keluarList, search, filterSifat])
@@ -906,11 +1018,15 @@ export default function SuratPage() {
                         </td></tr>
                       ) : filteredKeluar.map((item, i) => (
                         <motion.tr key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className="border-b border-[#f1f4f3] hover:bg-[#f7faf8] transition-colors group">
-                          <td className="px-4 py-3"><span className="text-xs font-mono font-bold text-[#16a34a]">{item.nomor_agenda}</span></td>
+                          <td className="px-4 py-3"><span className="text-xs font-mono font-bold text-[#16a34a]">{item.nomor_surat}</span></td>
                           <td className="px-4 py-3">
                             <p className="text-sm font-medium text-[#181c1c] line-clamp-1">{item.perihal}</p>
-                            <p className="text-xs text-[#6e7977]">{item.tujuan}</p>
-                            {item.penandatangan && <p className="text-xs text-[#0f766e]">TTD: {item.penandatangan}</p>}
+                            <div className="flex flex-wrap gap-0.5 mt-0.5">
+                              {parseTujuanToTags(item.tujuan).map((t, ti) => (
+                                <span key={ti} className="inline-flex items-center text-[10px] font-semibold text-[#15803d] bg-[#f0fdf4] border border-[#bbf7d0] px-1.5 py-0.5 rounded-full">{t}</span>
+                              ))}
+                            </div>
+                            {item.penandatangan && <p className="text-xs text-[#0f766e] mt-0.5">TTD: {item.penandatangan}</p>}
                           </td>
                           <td className="px-4 py-3 text-xs text-[#3e4947]">{formatDate(item.tanggal_surat)}</td>
                           <td className="px-4 py-3">{sifatBadge(item.sifat)}</td>

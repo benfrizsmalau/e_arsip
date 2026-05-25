@@ -102,6 +102,23 @@ function MasukModal({ open, onClose, editing, onSave }: {
     defaultValues: editing ? { asal_surat: editing.asal_surat, nomor_surat: editing.nomor_surat, tanggal_surat: editing.tanggal_surat, tanggal_terima: editing.tanggal_terima, perihal: editing.perihal, sifat: editing.sifat, disposisi_kepada: editing.disposisi_kepada ?? '' } : { sifat: 'biasa', tanggal_terima: new Date().toISOString().slice(0, 10) },
   })
 
+  // Reset form saat editing berubah (defaultValues hanya dibaca sekali saat mount)
+  useEffect(() => {
+    if (editing) {
+      reset({
+        asal_surat: editing.asal_surat,
+        nomor_surat: editing.nomor_surat,
+        tanggal_surat: editing.tanggal_surat,
+        tanggal_terima: editing.tanggal_terima,
+        perihal: editing.perihal,
+        sifat: editing.sifat,
+        disposisi_kepada: editing.disposisi_kepada ?? '',
+      })
+    } else {
+      reset({ sifat: 'biasa', tanggal_terima: new Date().toISOString().slice(0, 10) })
+    }
+  }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function submit(d: MasukForm) { await onSave(d); reset(); onClose() }
 
   return (

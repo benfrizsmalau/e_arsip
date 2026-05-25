@@ -13,7 +13,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
-import { fetchAllKlasifikasi, type KlasifikasiOption } from '@/lib/klasifikasi'
+import { fetchAllKlasifikasi, buildKlasifikasiTree, type KlasifikasiOption, type KlasifikasiNode } from '@/lib/klasifikasi'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
@@ -224,7 +224,7 @@ function KeluarModal({ open, onClose, editing, onSave }: {
   const [loadingPreview, setLoadingPreview]   = useState(false)
   const [linkedJRA, setLinkedJRA] = useState<{ kode: string; judul: string; retensi_aktif: number | null; retensi_inaktif: number | null; nasib_akhir: string | null }[]>([])
   const [tujuanTags, setTujuanTags] = useState<string[]>([])
-  const [selectedGroupKey, setSelectedGroupKey] = useState('')
+  const [selectedPath, setSelectedPath] = useState<KlasifikasiNode[]>([])
 
   const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors, isSubmitting } } = useForm<KeluarForm>({
     resolver: zodResolver(keluarSchema),
@@ -308,33 +308,31 @@ function KeluarModal({ open, onClose, editing, onSave }: {
     setTujuanTags([])
     setPreviewNomor(null)
     setNomorMode('otomatis')
+    setSelectedPath([])
     onClose()
   }
 
-  // Group klasifikasi by hundreds for optgroup
-  const grouped = useMemo(() => {
-    const groups: Record<string, KlasifikasiOption[]> = {}
-    const labels: Record<string, string> = {
-      '0': 'Umum (000)', '1': 'Pemerintahan (100)', '2': 'Politik (200)',
-      '3': 'Keamanan (300)', '4': 'Kesejahteraan (400)', '5': 'Perekonomian (500)',
-      '6': 'Pekerjaan Umum dan Ketenagaan (600)', '7': 'Pengawasan (700)',
-      '8': 'Kepegawaian (800)', '9': 'Keuangan (900)',
+  // Pohon hierarki klasifikasi (dibangun dari flat list)
+  const tree = useMemo(() => buildKlasifikasiTree(klasifikasiList), [klasifikasiList])
+
+  // Handler cascade: level = indeks dropdown (0 = root, 1 = anak root, dst.)
+  function handleCascadeChange(level: number, id: string) {
+    if (!id) {
+      const newPath = selectedPath.slice(0, level)
+      setSelectedPath(newPath)
+      setValue('id_klasifikasi', newPath[newPath.length - 1]?.id ?? '')
+      return
     }
-    klasifikasiList.forEach(k => {
-      const g = k.kode.charAt(0)
-      if (!groups[g]) groups[g] = []
-      groups[g].push(k)
-    })
-    return Object.entries(groups).map(([g, items]) => ({ key: g, label: Object.hasOwn(labels, g) ? labels[g] : g + 'xx', items }))
-  }, [klasifikasiList])
+    const options = level === 0 ? tree : (selectedPath[level - 1]?.children ?? [])
+    const node = options.find(n => n.id === id)
+    if (!node) return
+    const newPath = [...selectedPath.slice(0, level), node]
+    setSelectedPath(newPath)
+    setValue('id_klasifikasi', node.id)
+  }
 
-  const subItems = useMemo(
-    () => grouped.find(g => g.key === selectedGroupKey)?.items ?? [],
-    [grouped, selectedGroupKey]
-  )
-
-  // Reset pilihan grup saat modal dibuka/tutup
-  useEffect(() => { setSelectedGroupKey('') }, [open])
+  // Reset path saat modal dibuka/tutup
+  useEffect(() => { setSelectedPath([]) }, [open])
 
   return (
     <AnimatePresence>
@@ -396,60 +394,62 @@ function KeluarModal({ open, onClose, editing, onSave }: {
                         Klasifikasi Surat <span className="text-[#ba1a1a]">*</span>
                       </label>
 
-                      {/* Langkah 1 — Kategori Utama */}
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-[#6e7977] uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-[#0f766e] text-white text-[9px] flex items-center justify-center font-bold shrink-0">1</span>
-                          Kategori Utama
-                        </p>
-                        <div className="relative">
-                          <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
-                          <select
-                            className="w-full rounded-[10px] border border-[#CBD5E1] bg-white pl-8 pr-8 py-2.5 text-sm text-[#181c1c] focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all appearance-none"
-                            value={selectedGroupKey}
-                            onChange={e => {
-                              setSelectedGroupKey(e.target.value)
-                              setValue('id_klasifikasi', '')
-                            }}
-                          >
-                            <option value="">Pilih kategori utama...</option>
-                            {grouped.map(g => (
-                              <option key={g.key} value={g.key}>{g.label}</option>
-                            ))}
-                          </select>
-                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
-                        </div>
-                      </div>
+                      {/* Cascade dinamis — ditampilkan level per level */}
+                      {Array.from({ length: selectedPath.length + 1 }, (_, level) => {
+                        const levelLabels = ['Kategori Utama', 'Sub-Kategori', 'Sub-Sub-Kategori', 'Detail Klasifikasi']
+                        const label = levelLabels[level] ?? `Level ${level + 1}`
+                        const options: KlasifikasiNode[] = level === 0
+                          ? tree
+                          : (selectedPath[level - 1]?.children ?? [])
 
-                      {/* Langkah 2 — Sub-Klasifikasi */}
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-[#6e7977] uppercase tracking-wider flex items-center gap-1.5">
-                          <span className={`w-4 h-4 rounded-full text-white text-[9px] flex items-center justify-center font-bold shrink-0 transition-colors ${selectedGroupKey ? 'bg-[#0f766e]' : 'bg-[#bdc9c6]'}`}>2</span>
-                          Sub-Klasifikasi
-                        </p>
-                        <div className="relative">
-                          <select
-                            className={`w-full rounded-[10px] border pl-4 pr-8 py-2.5 text-sm focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all appearance-none ${
-                              selectedGroupKey
-                                ? 'border-[#CBD5E1] bg-white text-[#181c1c]'
-                                : 'border-[#e5e9e7] bg-[#f1f4f3] text-[#9ca3af] cursor-not-allowed'
-                            }`}
-                            disabled={!selectedGroupKey}
-                            {...register('id_klasifikasi')}
-                          >
-                            <option value="">{selectedGroupKey ? 'Pilih sub-klasifikasi...' : '— Pilih kategori dahulu —'}</option>
-                            {subItems.map(k => (
-                              <option key={k.id} value={k.id}>{k.kode} — {k.nama}</option>
-                            ))}
-                          </select>
-                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
-                        </div>
-                        {errors.id_klasifikasi && <p className="text-xs text-[#ba1a1a]">⚠ {errors.id_klasifikasi.message}</p>}
-                      </div>
+                        // Jangan tampilkan jika tidak ada pilihan
+                        if (level > 0 && options.length === 0) return null
 
-                      {/* Badge kode terpilih */}
+                        const isEnabled = level === 0 || !!selectedPath[level - 1]
+                        const selectedValue = selectedPath[level]?.id ?? ''
+
+                        return (
+                          <div key={level} className="space-y-1">
+                            <p className="text-[10px] font-semibold text-[#6e7977] uppercase tracking-wider flex items-center gap-1.5">
+                              <span className={`w-4 h-4 rounded-full text-white text-[9px] flex items-center justify-center font-bold shrink-0 transition-colors ${isEnabled ? 'bg-[#0f766e]' : 'bg-[#bdc9c6]'}`}>
+                                {level + 1}
+                              </span>
+                              {label}
+                            </p>
+                            <div className="relative">
+                              {level === 0 && (
+                                <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
+                              )}
+                              <select
+                                className={`w-full rounded-[10px] border ${level === 0 ? 'pl-8' : 'pl-4'} pr-8 py-2.5 text-sm focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all appearance-none ${
+                                  isEnabled
+                                    ? 'border-[#CBD5E1] bg-white text-[#181c1c]'
+                                    : 'border-[#e5e9e7] bg-[#f1f4f3] text-[#9ca3af] cursor-not-allowed'
+                                }`}
+                                disabled={!isEnabled}
+                                value={selectedValue}
+                                onChange={e => handleCascadeChange(level, e.target.value)}
+                              >
+                                <option value="">
+                                  {level === 0 ? 'Pilih kategori utama...' : `— Pilih ${label.toLowerCase()}...`}
+                                </option>
+                                {options.map(n => (
+                                  <option key={n.id} value={n.id}>{n.kode} — {n.nama}</option>
+                                ))}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
+                            </div>
+                            {/* Tampilkan error hanya di bawah dropdown terakhir yang aktif */}
+                            {level === selectedPath.length && errors.id_klasifikasi && (
+                              <p className="text-xs text-[#ba1a1a]">⚠ {errors.id_klasifikasi.message}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {/* Badge kode terpilih — tampil hanya jika ada pilihan */}
                       {watchedKlas && (() => {
-                        const sel = subItems.find(k => k.id === watchedKlas)
+                        const sel = klasifikasiList.find(k => k.id === watchedKlas)
                         return sel ? (
                           <div className="flex items-center gap-2 px-3 py-2 bg-[#f0fdf4] border border-[#86efac] rounded-[10px]">
                             <CheckCircle2 size={13} className="text-[#16a34a] shrink-0" />

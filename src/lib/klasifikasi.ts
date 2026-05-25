@@ -5,6 +5,37 @@ const PAGE_SIZE = 1000
 
 export type KlasifikasiOption = Pick<Klasifikasi, 'id' | 'kode' | 'nama'>
 
+export type KlasifikasiNode = KlasifikasiOption & {
+  children: KlasifikasiNode[]
+}
+
+/** Bangun pohon hierarki dari daftar flat klasifikasi.
+ *  Parent ditentukan dengan memotong segmen terakhir dari kode,
+ *  misalnya parent dari "000.1.2" adalah "000.1". */
+export function buildKlasifikasiTree(items: KlasifikasiOption[]): KlasifikasiNode[] {
+  const map = new Map<string, KlasifikasiNode>()
+  const roots: KlasifikasiNode[] = []
+
+  const sorted = [...items].sort((a, b) => compareClassificationCodes(a.kode, b.kode))
+
+  for (const item of sorted) {
+    const node: KlasifikasiNode = { ...item, children: [] }
+    map.set(item.kode, node)
+
+    const dot = item.kode.lastIndexOf('.')
+    if (dot === -1) {
+      roots.push(node)
+    } else {
+      const parentKode = item.kode.slice(0, dot)
+      const parent = map.get(parentKode)
+      if (parent) parent.children.push(node)
+      else roots.push(node) // orphan → jadikan root
+    }
+  }
+
+  return roots
+}
+
 export function compareClassificationCodes(a: string, b: string): number {
   const aParts = a.split('.').map(Number)
   const bParts = b.split('.').map(Number)

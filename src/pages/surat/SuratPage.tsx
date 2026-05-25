@@ -6,7 +6,7 @@ import {
   Plus, Search, Filter, Edit2, Trash2, X, ChevronDown,
   Mail, Send, AlertTriangle, FileText, Inbox,
   CheckCircle2, Clock, Archive, Hash, BookOpen, Sparkles, PenLine,
-  RefreshCw, FolderOpen, FileSpreadsheet, Building2,
+  RefreshCw, FolderOpen, FileSpreadsheet, Building2, Printer,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { syncAllPajak, getLastSyncAt, BPKPAD_ID, type SyncSummary } from '@/lib/syncPajak'
@@ -755,6 +755,112 @@ function SyncBar({ syncing, lastSummary, lastAt, onSync }: {
   )
 }
 
+// ─── Print Helper ─────────────────────────────────────────────────────────────
+function printSuratMasuk(item: SuratMasuk) {
+  const win = window.open('', '_blank', 'width=800,height=900')
+  if (!win) return
+  const sifatLabel: Record<string, string> = { biasa: 'Biasa', penting: 'Penting', rahasia: 'Rahasia', sangat_segera: 'Sangat Segera' }
+  const statusLabel: Record<string, string> = { baru: 'Baru', diproses: 'Diproses', selesai: 'Selesai', diarsipkan: 'Diarsipkan' }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Surat Masuk — ${item.nomor_agenda}</title>
+  <style>
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;margin:0;padding:32px 48px}
+    h1{font-size:16pt;margin:0 0 4px}
+    .subtitle{color:#555;font-size:10pt;margin-bottom:24px}
+    .logo-row{display:flex;align-items:center;gap:12px;border-bottom:2px solid #0f766e;padding-bottom:12px;margin-bottom:20px}
+    .logo-box{width:48px;height:48px;background:#ccfbf1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20pt;font-weight:700;color:#0f766e}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    td{padding:6px 4px;vertical-align:top}
+    td:first-child{width:180px;font-weight:600;color:#444}
+    tr{border-bottom:1px solid #e5e9e7}
+    .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:9pt;font-weight:600}
+    .badge-sifat{background:#fef3c7;color:#d97706}
+    .badge-status{background:#dcfce7;color:#16a34a}
+    .footer{margin-top:32px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:12px}
+    @media print{body{padding:16px 24px}}
+  </style></head><body>
+  <div class="logo-row">
+    <div class="logo-box">A</div>
+    <div><h1>Lembar Disposisi Surat Masuk</h1><div class="subtitle">Pemerintah Kabupaten Mamberamo Raya — e-Arsip Mamraya</div></div>
+  </div>
+  <table>
+    <tr><td>Nomor Agenda</td><td><strong>${item.nomor_agenda}</strong></td></tr>
+    <tr><td>Asal Surat</td><td>${item.asal_surat}</td></tr>
+    <tr><td>Nomor Surat</td><td>${item.nomor_surat}</td></tr>
+    <tr><td>Tanggal Surat</td><td>${item.tanggal_surat}</td></tr>
+    <tr><td>Tanggal Diterima</td><td>${item.tanggal_terima}</td></tr>
+    <tr><td>Perihal</td><td>${item.perihal}</td></tr>
+    <tr><td>Sifat</td><td><span class="badge badge-sifat">${sifatLabel[item.sifat] ?? item.sifat}</span></td></tr>
+    ${item.disposisi_kepada ? `<tr><td>Disposisi Kepada</td><td>${item.disposisi_kepada}</td></tr>` : ''}
+    <tr><td>Status</td><td><span class="badge badge-status">${statusLabel[item.status] ?? item.status}</span></td></tr>
+  </table>
+  <div style="margin-top:48px;display:grid;grid-template-columns:1fr 1fr;gap:32px">
+    <div style="text-align:center">
+      <div style="border-bottom:1px solid #333;margin-top:48px;margin-bottom:4px"></div>
+      <div style="font-size:9pt;color:#555">Penerima / Agendaris</div>
+    </div>
+    <div style="text-align:center">
+      <div style="border-bottom:1px solid #333;margin-top:48px;margin-bottom:4px"></div>
+      <div style="font-size:9pt;color:#555">${item.disposisi_kepada ?? 'Pimpinan'}</div>
+    </div>
+  </div>
+  <div class="footer">Dicetak dari e-Arsip Mamraya · ${new Date().toLocaleString('id-ID')}</div>
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}<\/script>
+  </body></html>`)
+  win.document.close()
+}
+
+function printSuratKeluar(item: SuratKeluar) {
+  const win = window.open('', '_blank', 'width=800,height=900')
+  if (!win) return
+  const sifatLabel: Record<string, string> = { biasa: 'Biasa', penting: 'Penting', rahasia: 'Rahasia', sangat_segera: 'Sangat Segera' }
+  const statusLabel: Record<string, string> = { draft: 'Draft', menunggu_ttd: 'Menunggu TTD', terkirim: 'Terkirim', diarsipkan: 'Diarsipkan' }
+  const tujuanList = parseTujuanToTags(item.tujuan)
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Surat Keluar — ${item.nomor_surat}</title>
+  <style>
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;margin:0;padding:32px 48px}
+    h1{font-size:16pt;margin:0 0 4px}
+    .subtitle{color:#555;font-size:10pt;margin-bottom:24px}
+    .logo-row{display:flex;align-items:center;gap:12px;border-bottom:2px solid #16a34a;padding-bottom:12px;margin-bottom:20px}
+    .logo-box{width:48px;height:48px;background:#dcfce7;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20pt;font-weight:700;color:#16a34a}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    td{padding:6px 4px;vertical-align:top}
+    td:first-child{width:180px;font-weight:600;color:#444}
+    tr{border-bottom:1px solid #e5e9e7}
+    .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:9pt;font-weight:600}
+    .badge-sifat{background:#fef3c7;color:#d97706}
+    .badge-status{background:#dcfce7;color:#16a34a}
+    .footer{margin-top:32px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:12px}
+    @media print{body{padding:16px 24px}}
+  </style></head><body>
+  <div class="logo-row">
+    <div class="logo-box">A</div>
+    <div><h1>Lembar Pengantar Surat Keluar</h1><div class="subtitle">Pemerintah Kabupaten Mamberamo Raya — e-Arsip Mamraya</div></div>
+  </div>
+  <table>
+    <tr><td>Nomor Agenda</td><td><strong>${item.nomor_agenda}</strong></td></tr>
+    <tr><td>Nomor Surat</td><td><strong>${item.nomor_surat}</strong></td></tr>
+    <tr><td>Tanggal Surat</td><td>${item.tanggal_surat}</td></tr>
+    <tr><td>Ditujukan Kepada</td><td>${tujuanList.join(', ')}</td></tr>
+    <tr><td>Perihal</td><td>${item.perihal}</td></tr>
+    <tr><td>Sifat</td><td><span class="badge badge-sifat">${sifatLabel[item.sifat] ?? item.sifat}</span></td></tr>
+    ${item.penandatangan ? `<tr><td>Penandatangan</td><td>${item.penandatangan}</td></tr>` : ''}
+    <tr><td>Status</td><td><span class="badge badge-status">${statusLabel[item.status] ?? item.status}</span></td></tr>
+  </table>
+  <div style="margin-top:48px;display:flex;justify-content:flex-end">
+    <div style="text-align:center;min-width:200px">
+      <div style="font-size:10pt;margin-bottom:4px">${item.penandatangan ? item.penandatangan : 'Pejabat yang berwenang'}</div>
+      <div style="border-bottom:1px solid #333;margin-top:48px;margin-bottom:4px"></div>
+      <div style="font-size:9pt;color:#555">Tanda Tangan &amp; Stempel</div>
+    </div>
+  </div>
+  <div class="footer">Dicetak dari e-Arsip Mamraya · ${new Date().toLocaleString('id-ID')}</div>
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}<\/script>
+  </body></html>`)
+  win.document.close()
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SuratPage() {
   const qc = useQueryClient()
@@ -1167,6 +1273,7 @@ export default function SuratPage() {
                                 ? <button onClick={() => navigate('/arsip')} className="p-1.5 rounded-lg bg-[#f0fdfa] text-[#0f766e]" title="Lihat Arsip"><FolderOpen size={14} /></button>
                                 : <button onClick={() => arsipkanMut.mutate({ surat: item, type: 'masuk' })} disabled={arsipkanMut.isPending} className="p-1.5 rounded-lg hover:bg-[#f0fdfa] text-[#6e7977] hover:text-[#0f766e] disabled:opacity-40" title="Arsipkan"><Archive size={14} /></button>
                               }
+                              <button onClick={() => printSuratMasuk(item)} className="p-1.5 rounded-lg hover:bg-[#e0f2fe] text-[#6e7977] hover:text-[#0284c7]" title="Cetak Lembar Disposisi"><Printer size={14} /></button>
                               <button onClick={() => { setEditMasuk(item); setMasukModal(true) }} className="p-1.5 rounded-lg hover:bg-[#fef9c3] text-[#6e7977] hover:text-[#d97706]" title="Edit"><Edit2 size={14} /></button>
                               <button onClick={() => setDeleting({ id: item.id, label: `${item.nomor_agenda} — ${item.perihal}`, type: 'masuk' })} className="p-1.5 rounded-lg hover:bg-[#ffdad6] text-[#6e7977] hover:text-[#ba1a1a]" title="Hapus"><Trash2 size={14} /></button>
                             </div>
@@ -1224,6 +1331,7 @@ export default function SuratPage() {
                                 ? <button onClick={() => navigate('/arsip')} className="p-1.5 rounded-lg bg-[#f0fdfa] text-[#0f766e]" title="Lihat Arsip"><FolderOpen size={14} /></button>
                                 : <button onClick={() => arsipkanMut.mutate({ surat: item, type: 'keluar' })} disabled={arsipkanMut.isPending} className="p-1.5 rounded-lg hover:bg-[#f0fdfa] text-[#6e7977] hover:text-[#0f766e] disabled:opacity-40" title="Arsipkan"><Archive size={14} /></button>
                               }
+                              <button onClick={() => printSuratKeluar(item)} className="p-1.5 rounded-lg hover:bg-[#e0f2fe] text-[#6e7977] hover:text-[#0284c7]" title="Cetak Lembar Pengantar"><Printer size={14} /></button>
                               <button onClick={() => { setEditKeluar(item); setKeluarModal(true) }} className="p-1.5 rounded-lg hover:bg-[#fef9c3] text-[#6e7977] hover:text-[#d97706]" title="Edit"><Edit2 size={14} /></button>
                               <button onClick={() => setDeleting({ id: item.id, label: `${item.nomor_agenda} — ${item.perihal}`, type: 'keluar' })} className="p-1.5 rounded-lg hover:bg-[#ffdad6] text-[#6e7977] hover:text-[#ba1a1a]" title="Hapus"><Trash2 size={14} /></button>
                             </div>

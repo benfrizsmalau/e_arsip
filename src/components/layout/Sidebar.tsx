@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Clock, FolderOpen, Mail, Settings,
   Smartphone, LogOut, ChevronLeft, ChevronRight,
-  BookOpen, Building2, Users, BarChart3, ShieldCheck,
+  BookOpen, Building2, Users, BarChart3, ShieldCheck, UserSquare2,
 } from 'lucide-react'
 import { cn, getInitials } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
@@ -19,8 +19,9 @@ const skpdNav = [
 ]
 
 const skpdAdminNav = [
-  { to: '/pengaturan', icon: Settings,   label: 'Pengaturan OPD' },
-  { to: '/mobile',     icon: Smartphone, label: 'Aplikasi Mobile' },
+  { to: '/karyawan',   icon: UserSquare2, label: 'Manajemen Karyawan' },
+  { to: '/pengaturan', icon: Settings,    label: 'Pengaturan OPD' },
+  { to: '/mobile',     icon: Smartphone,  label: 'Aplikasi Mobile' },
 ]
 
 // ─── Menu Superadmin (Dinas Kearsipan) ───────────────────────────────────────

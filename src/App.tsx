@@ -14,6 +14,7 @@ const ArsipPage            = lazy(() => import('@/pages/arsip/ArsipPage'))
 const SuratPage            = lazy(() => import('@/pages/surat/SuratPage'))
 const PengaturanPage       = lazy(() => import('@/pages/pengaturan/PengaturanPage'))
 const MobilePage           = lazy(() => import('@/pages/mobile/MobilePage'))
+const KaryawanPage         = lazy(() => import('@/pages/karyawan/KaryawanPage'))
 // Superadmin pages
 const AdminDashboardPage   = lazy(() => import('@/pages/admin/AdminDashboardPage'))
 const AdminOPDPage         = lazy(() => import('@/pages/admin/AdminOPDPage'))
@@ -52,6 +53,7 @@ export default function App() {
                   <Route path="/surat"      element={<SuratPage />} />
                   <Route path="/pengaturan" element={<PengaturanPage />} />
                   <Route path="/mobile"     element={<MobilePage />} />
+                  <Route path="/karyawan"   element={<KaryawanPage />} />
                   {/* Superadmin routes */}
                   <Route path="/admin/dashboard"  element={<AdminDashboardPage />} />
                   <Route path="/admin/opd"        element={<AdminOPDPage />} />

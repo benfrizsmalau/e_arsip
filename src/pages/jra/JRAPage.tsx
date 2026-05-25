@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -6,7 +6,7 @@ import {
   Edit2, Trash2, Eye, X, BookOpen, AlertTriangle, Filter,
   Archive, Clock, RotateCcw, CheckCircle2
 } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
@@ -53,6 +53,15 @@ function retensiLabel(tahun?: number | null) {
   return tahun === 0 ? 'Seumur hidup' : `${tahun} tahun`
 }
 
+/** Badge peringatan berdasarkan total masa retensi (aktif + inaktif) */
+function retensiWarning(aktif?: number | null, inaktif?: number | null) {
+  const total = (aktif ?? 0) + (inaktif ?? 0)
+  if (aktif === 0 || inaktif === 0) return null // seumur hidup / permanen
+  if (total <= 2)  return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#ffdad6] text-[#ba1a1a]"><AlertTriangle size={9} /> Sangat Singkat</span>
+  if (total <= 5)  return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#fef3c7] text-[#d97706]"><AlertTriangle size={9} /> Singkat</span>
+  return null
+}
+
 // ─── Modal ───────────────────────────────────────────────────────────────────
 function JRAModal({
   open, onClose, editing, klasifikasiList, onSave,
@@ -64,18 +73,26 @@ function JRAModal({
   onSave: (data: JRAForm) => Promise<void>
 }) {
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<JRAForm>({
-    resolver: zodResolver(jraSchema),
-    defaultValues: editing ? {
-      kode:            editing.kode,
-      judul:           editing.judul,
-      id_klasifikasi:  editing.id_klasifikasi ?? '',
-      retensi_aktif:   editing.retensi_aktif ?? undefined,
-      retensi_inaktif: editing.retensi_inaktif ?? undefined,
-      nasib_akhir:     editing.nasib_akhir ?? undefined,
-      keterangan:      editing.keterangan ?? '',
-      dasar_hukum:     editing.dasar_hukum ?? '',
-    } : {},
+    resolver: zodResolver(jraSchema) as Resolver<JRAForm>,
+    defaultValues: {},
   })
+
+  useEffect(() => {
+    if (editing) {
+      reset({
+        kode:            editing.kode,
+        judul:           editing.judul,
+        id_klasifikasi:  editing.id_klasifikasi ?? '',
+        retensi_aktif:   editing.retensi_aktif ?? undefined,
+        retensi_inaktif: editing.retensi_inaktif ?? undefined,
+        nasib_akhir:     editing.nasib_akhir ?? undefined,
+        keterangan:      editing.keterangan ?? '',
+        dasar_hukum:     editing.dasar_hukum ?? '',
+      })
+    } else {
+      reset({})
+    }
+  }, [editing])
 
   async function submit(data: JRAForm) {
     await onSave(data)
@@ -681,7 +698,12 @@ export default function JRAPage() {
                       <td className="px-4 py-3 text-sm text-[#3e4947] font-medium">
                         {retensiLabel(item.retensi_inaktif)}
                       </td>
-                      <td className="px-4 py-3">{nasibBadge(item.nasib_akhir)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          {nasibBadge(item.nasib_akhir)}
+                          {retensiWarning(item.retensi_aktif, item.retensi_inaktif)}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button

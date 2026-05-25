@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,7 +9,7 @@ import {
   Archive, Clock, Zap, Star, LayoutGrid, List,
   FileUp, File, ImageIcon, Loader2, ExternalLink
 } from 'lucide-react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
@@ -159,7 +159,7 @@ function ArsipModal({ open, onClose, editing, klasifikasiList, jraList, onSave }
   const [progress] = useState(0)
 
   const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<ArsipFormData>({
-    resolver: zodResolver(arsipSchema),
+    resolver: zodResolver(arsipSchema) as Resolver<ArsipFormData>,
     defaultValues: editing ? {
       judul: editing.judul, perihal: editing.perihal ?? '', id_klasifikasi: editing.id_klasifikasi ?? '',
       id_jra: editing.id_jra ?? '', nomor_surat: editing.nomor_surat ?? '', tanggal_surat: editing.tanggal_surat ?? '',
@@ -451,10 +451,26 @@ export default function ArsipPage() {
   const [deleting, setDeleting]   = useState<ArsipWithRel | null>(null)
   const [detail, setDetail]       = useState<ArsipWithRel | null>(null)
 
+  // Debounce search so Supabase query only fires 400ms after user stops typing
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400)
+    return () => clearTimeout(t)
+  }, [search])
+
   const { data: arsipList = [], isLoading } = useQuery({
-    queryKey: ['arsip'],
+    queryKey: ['arsip', debouncedSearch],
     queryFn: async () => {
-      const { data, error } = await supabase.from('arsip').select('*, klasifikasi(kode, nama), jra(kode, judul, retensi_aktif, retensi_inaktif, nasib_akhir)').order('created_at', { ascending: false })
+      let q = supabase
+        .from('arsip')
+        .select('*, klasifikasi(kode, nama), jra(kode, judul, retensi_aktif, retensi_inaktif, nasib_akhir)')
+        .order('created_at', { ascending: false })
+      if (debouncedSearch) {
+        q = q.or(
+          `judul.ilike.%${debouncedSearch}%,perihal.ilike.%${debouncedSearch}%,nomor_arsip.ilike.%${debouncedSearch}%,nomor_surat.ilike.%${debouncedSearch}%,pengirim.ilike.%${debouncedSearch}%`
+        )
+      }
+      const { data, error } = await q
       if (error) return []
       return (data as ArsipWithRel[]) ?? []
     },
@@ -482,7 +498,7 @@ export default function ArsipPage() {
         fileUrl = urlData.publicUrl
       }
       const nomor = id ? (editing?.nomor_arsip ?? '') : generateNomorArsip(new Date().getFullYear(), arsipList.length + 1)
-      const payload = {
+      const payload: Omit<Arsip, 'id' | 'created_at' | 'updated_at'> = {
         nomor_arsip: nomor, judul: data.judul, perihal: data.perihal || null,
         id_klasifikasi: data.id_klasifikasi || null, id_jra: data.id_jra || null,
         nomor_surat: data.nomor_surat || null, tanggal_surat: data.tanggal_surat || null,
@@ -490,8 +506,9 @@ export default function ArsipPage() {
         media_simpan: data.media_simpan, tingkat_perkembangan: data.tingkat_perkembangan ?? null,
         kurun_waktu_mulai: data.kurun_waktu_mulai || null, kurun_waktu_selesai: data.kurun_waktu_selesai || null,
         jumlah: data.jumlah, keterangan: data.keterangan || null, status: data.status,
-        ...(fileUrl ? { file_url: fileUrl } : {}),
-        ...(profile?.id ? { created_by: profile.id } : {}),
+        file_url: fileUrl, thumbnail_url: null,
+        created_by: profile?.id ?? null,
+        id_instansi: profile?.id_instansi ?? null,
       }
       if (id) { const { error } = await supabase.from('arsip').update(payload).eq('id', id); if (error) throw error }
       else { const { error } = await supabase.from('arsip').insert(payload); if (error) throw error }
@@ -514,14 +531,9 @@ export default function ArsipPage() {
   })
 
   const filtered = useMemo(() => {
-    let result = arsipList
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter((a) => a.nomor_arsip.toLowerCase().includes(q) || a.judul.toLowerCase().includes(q) || a.pengirim?.toLowerCase().includes(q) || a.nomor_surat?.toLowerCase().includes(q))
-    }
-    if (filterStatus !== 'all') result = result.filter((a) => a.status === filterStatus)
-    return result
-  }, [arsipList, search, filterStatus])
+    if (filterStatus === 'all') return arsipList
+    return arsipList.filter((a) => a.status === filterStatus)
+  }, [arsipList, filterStatus])
 
   const stats = useMemo(() => ({
     total: arsipList.length,

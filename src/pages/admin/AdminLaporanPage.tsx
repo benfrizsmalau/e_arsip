@@ -2,8 +2,8 @@ import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import {
-  BarChart3, Download, Filter, Calendar,
-  Building2, FolderOpen, Mail, TrendingUp,
+  BarChart3, Download, Calendar,
+  Building2, FolderOpen, TrendingUp,
   FileText, ArrowUpRight, ArrowDownLeft,
   Printer,
 } from 'lucide-react'
@@ -24,22 +24,47 @@ interface LaporanRow {
 }
 
 async function fetchLaporan(): Promise<LaporanRow[]> {
-  const [instansiRes, arsipRes] = await Promise.all([
+  const [instansiRes, arsipRes, masukRes, keluarRes, penggunaRes] = await Promise.all([
     supabase.from('instansi').select('id, kode, nama, singkatan').order('kode'),
     supabase.from('arsip').select('id_instansi, status'),
+    supabase.from('surat_masuk').select('id_instansi'),
+    supabase.from('surat_keluar').select('id_instansi').like('nomor_agenda', 'SK-%'),
+    supabase.from('user_profiles').select('id_instansi'),
   ])
-  const instansiList = instansiRes.data ?? []
-  const allArsip = arsipRes.data ?? []
 
+  const instansiList = instansiRes.data ?? []
+
+  // Group arsip by instansi
   const arsipMap = new Map<string, { aktif: number; inaktif: number; vital: number; total: number }>()
-  allArsip.forEach((a: any) => {
+  ;(arsipRes.data ?? []).forEach((a: any) => {
     if (!a.id_instansi) return
     const cur = arsipMap.get(a.id_instansi) ?? { aktif: 0, inaktif: 0, vital: 0, total: 0 }
     cur.total++
-    if (a.status === 'aktif')    cur.aktif++
-    if (a.status === 'inaktif')  cur.inaktif++
-    if (a.status === 'vital')    cur.vital++
+    if (a.status === 'aktif')   cur.aktif++
+    if (a.status === 'inaktif') cur.inaktif++
+    if (a.status === 'vital')   cur.vital++
     arsipMap.set(a.id_instansi, cur)
+  })
+
+  // Group surat masuk by instansi
+  const masukMap = new Map<string, number>()
+  ;(masukRes.data ?? []).forEach((s: any) => {
+    if (!s.id_instansi) return
+    masukMap.set(s.id_instansi, (masukMap.get(s.id_instansi) ?? 0) + 1)
+  })
+
+  // Group surat keluar by instansi
+  const keluarMap = new Map<string, number>()
+  ;(keluarRes.data ?? []).forEach((s: any) => {
+    if (!s.id_instansi) return
+    keluarMap.set(s.id_instansi, (keluarMap.get(s.id_instansi) ?? 0) + 1)
+  })
+
+  // Group pengguna by instansi
+  const penggunaMap = new Map<string, number>()
+  ;(penggunaRes.data ?? []).forEach((u: any) => {
+    if (!u.id_instansi) return
+    penggunaMap.set(u.id_instansi, (penggunaMap.get(u.id_instansi) ?? 0) + 1)
   })
 
   return instansiList.map((inst: any) => {
@@ -47,33 +72,59 @@ async function fetchLaporan(): Promise<LaporanRow[]> {
     return {
       opd:           inst.singkatan ?? inst.kode,
       opd_nama:      inst.nama,
-      surat_masuk:   0,
-      surat_keluar:  0,
+      surat_masuk:   masukMap.get(inst.id)   ?? 0,
+      surat_keluar:  keluarMap.get(inst.id)  ?? 0,
       arsip_aktif:   counts.aktif,
       arsip_inaktif: counts.inaktif,
       arsip_vital:   counts.vital,
       total_arsip:   counts.total,
-      pengguna:      0,
+      pengguna:      penggunaMap.get(inst.id) ?? 0,
     }
   })
 }
 
-// ─── CSV Export ──────────────────────────────────────────────────────────────
+// ─── Export helpers ───────────────────────────────────────────────────────────
 function exportCSV(data: LaporanRow[], tahun: string) {
   const header = ['OPD', 'Nama OPD', 'Surat Masuk', 'Surat Keluar', 'Arsip Aktif', 'Arsip Inaktif', 'Arsip Vital', 'Total Arsip', 'Pengguna']
-  const rows = data.map(r => [
-    r.opd, r.opd_nama,
-    r.surat_masuk, r.surat_keluar,
-    r.arsip_aktif, r.arsip_inaktif, r.arsip_vital, r.total_arsip,
-    r.pengguna,
-  ])
+  const rows = data.map(r => [r.opd, `"${r.opd_nama}"`, r.surat_masuk, r.surat_keluar, r.arsip_aktif, r.arsip_inaktif, r.arsip_vital, r.total_arsip, r.pengguna])
   const csv = [header, ...rows].map(r => r.join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
   const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url
-  a.download = `laporan-arsip-mamraya-${tahun}.csv`
-  a.click()
+  const a    = document.createElement('a'); a.href = url; a.download = `laporan-arsip-mamraya-${tahun}.csv`; a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportExcel(data: LaporanRow[], tahun: string) {
+  const th = (s: string) => `<th style="background:#904d00;color:#fff;font-weight:bold;padding:6px 10px;border:1px solid #ccc">${s}</th>`
+  const td = (s: string | number, bold = false) =>
+    `<td style="padding:5px 10px;border:1px solid #ddd;${bold ? 'font-weight:bold' : ''}">${s}</td>`
+
+  const headerRow = ['OPD','Nama OPD','Surat Masuk','Surat Keluar','Arsip Aktif','Arsip Inaktif','Arsip Vital','Total Arsip','Pengguna'].map(th).join('')
+  const dataRows  = data.map(r =>
+    `<tr>${[td(r.opd,true), td(r.opd_nama), td(r.surat_masuk), td(r.surat_keluar), td(r.arsip_aktif), td(r.arsip_inaktif), td(r.arsip_vital), td(r.total_arsip,true), td(r.pengguna)].join('')}</tr>`
+  ).join('')
+  const totRow = `<tr style="background:#fef3e2">${[
+    td('TOTAL',true), td('Semua OPD'),
+    td(data.reduce((s,r)=>s+r.surat_masuk,0),true),
+    td(data.reduce((s,r)=>s+r.surat_keluar,0),true),
+    td(data.reduce((s,r)=>s+r.arsip_aktif,0),true),
+    td(data.reduce((s,r)=>s+r.arsip_inaktif,0),true),
+    td(data.reduce((s,r)=>s+r.arsip_vital,0),true),
+    td(data.reduce((s,r)=>s+r.total_arsip,0),true),
+    td(data.reduce((s,r)=>s+r.pengguna,0),true),
+  ].join('')}</tr>`
+
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>Laporan ${tahun}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
+<body><h2 style="font-family:Arial">Laporan Arsip & Surat — Kab. Mamberamo Raya — Tahun ${tahun}</h2>
+<table border="1" cellspacing="0" cellpadding="0" style="font-family:Arial;font-size:11px">
+<tr>${headerRow}</tr>${dataRows}${totRow}</table></body></html>`
+
+  const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a'); a.href = url; a.download = `laporan-arsip-mamraya-${tahun}.xls`; a.click()
   URL.revokeObjectURL(url)
 }
 
@@ -143,9 +194,15 @@ export default function AdminLaporanPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => exportCSV(filtered, tahun)}
-            className="flex items-center gap-2 px-4 py-2.5 border border-[#e5e9e7] bg-white text-[#3e4947] text-sm font-semibold rounded-xl hover:border-[#fe932c] hover:text-[#fe932c] transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 border border-[#e5e9e7] bg-white text-[#3e4947] text-sm font-semibold rounded-xl hover:border-[#0f766e] hover:text-[#0f766e] transition-colors"
           >
-            <Download size={15} /> Export CSV
+            <Download size={15} /> CSV
+          </button>
+          <button
+            onClick={() => exportExcel(filtered, tahun)}
+            className="flex items-center gap-2 px-4 py-2.5 border border-[#e5e9e7] bg-white text-[#3e4947] text-sm font-semibold rounded-xl hover:border-[#16a34a] hover:text-[#16a34a] transition-colors"
+          >
+            <FileText size={15} /> Excel
           </button>
           <button
             onClick={() => window.print()}

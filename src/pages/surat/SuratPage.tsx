@@ -2,9 +2,9 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Plus, Search, Filter, Edit2, Trash2, X,
+  Plus, Search, Filter, Edit2, Trash2, X, ChevronDown,
   Mail, Send, AlertTriangle, FileText, Inbox,
-  CheckCircle2, Clock, Archive, Zap, Hash, BookOpen, Sparkles, PenLine,
+  CheckCircle2, Clock, Archive, Hash, BookOpen, Sparkles, PenLine,
   RefreshCw, FolderOpen, FileSpreadsheet, Building2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -13,6 +13,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
+import { fetchAllKlasifikasi, type KlasifikasiOption } from '@/lib/klasifikasi'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
@@ -218,11 +219,12 @@ function KeluarModal({ open, onClose, editing, onSave }: {
   const { profile } = useAuthStore()
   const { error: showError } = useToast()
   const [nomorMode, setNomorMode]           = useState<NomorMode>('otomatis')
-  const [klasifikasiList, setKlasifikasiList] = useState<{ id: string; kode: string; nama: string }[]>([])
+  const [klasifikasiList, setKlasifikasiList] = useState<KlasifikasiOption[]>([])
   const [previewNomor, setPreviewNomor]       = useState<string | null>(null)
   const [loadingPreview, setLoadingPreview]   = useState(false)
   const [linkedJRA, setLinkedJRA] = useState<{ kode: string; judul: string; retensi_aktif: number | null; retensi_inaktif: number | null; nasib_akhir: string | null }[]>([])
   const [tujuanTags, setTujuanTags] = useState<string[]>([])
+  const [selectedGroupKey, setSelectedGroupKey] = useState('')
 
   const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors, isSubmitting } } = useForm<KeluarForm>({
     resolver: zodResolver(keluarSchema),
@@ -247,8 +249,11 @@ function KeluarModal({ open, onClose, editing, onSave }: {
 
   // Load klasifikasi list once
   useEffect(() => {
-    supabase.from('klasifikasi').select('id, kode, nama').order('kode')
-      .then(({ data }) => { if (data?.length) setKlasifikasiList(data) })
+    let cancelled = false
+    fetchAllKlasifikasi<KlasifikasiOption>('id, kode, nama')
+      .then((data) => { if (!cancelled) setKlasifikasiList(data) })
+      .catch(() => { if (!cancelled) setKlasifikasiList([]) })
+    return () => { cancelled = true }
   }, [])
 
   // Preview nomor surat whenever klasifikasi changes (otomatis mode only)
@@ -308,11 +313,11 @@ function KeluarModal({ open, onClose, editing, onSave }: {
 
   // Group klasifikasi by hundreds for optgroup
   const grouped = useMemo(() => {
-    const groups: Record<string, { id: string; kode: string; nama: string }[]> = {}
+    const groups: Record<string, KlasifikasiOption[]> = {}
     const labels: Record<string, string> = {
       '0': 'Umum (000)', '1': 'Pemerintahan (100)', '2': 'Politik (200)',
       '3': 'Keamanan (300)', '4': 'Kesejahteraan (400)', '5': 'Perekonomian (500)',
-      '6': 'Pekerjaan Umum (600)', '7': 'Pengawasan (700)',
+      '6': 'Pekerjaan Umum dan Ketenagaan (600)', '7': 'Pengawasan (700)',
       '8': 'Kepegawaian (800)', '9': 'Keuangan (900)',
     }
     klasifikasiList.forEach(k => {
@@ -320,8 +325,16 @@ function KeluarModal({ open, onClose, editing, onSave }: {
       if (!groups[g]) groups[g] = []
       groups[g].push(k)
     })
-    return Object.entries(groups).map(([g, items]) => ({ label: Object.hasOwn(labels, g) ? labels[g] : g + 'xx', items }))
+    return Object.entries(groups).map(([g, items]) => ({ key: g, label: Object.hasOwn(labels, g) ? labels[g] : g + 'xx', items }))
   }, [klasifikasiList])
+
+  const subItems = useMemo(
+    () => grouped.find(g => g.key === selectedGroupKey)?.items ?? [],
+    [grouped, selectedGroupKey]
+  )
+
+  // Reset pilihan grup saat modal dibuka/tutup
+  useEffect(() => { setSelectedGroupKey('') }, [open])
 
   return (
     <AnimatePresence>
@@ -376,29 +389,76 @@ function KeluarModal({ open, onClose, editing, onSave }: {
                   transition={{ duration: 0.15 }}
                   className="space-y-3"
                 >
-                  {/* Klasifikasi */}
+                  {/* Klasifikasi — cascading 2-step */}
                   {!editing && (
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <label className="block text-xs font-semibold text-[#181c1c] uppercase tracking-wider">
                         Klasifikasi Surat <span className="text-[#ba1a1a]">*</span>
                       </label>
-                      <div className="relative">
-                        <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
-                        <select
-                          className="w-full rounded-[10px] border border-[#CBD5E1] bg-white pl-8 pr-4 py-2.5 text-sm text-[#181c1c] focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all appearance-none"
-                          {...register('id_klasifikasi')}
-                        >
-                          <option value="">— Pilih Klasifikasi —</option>
-                          {grouped.map(g => (
-                            <optgroup key={g.label} label={g.label}>
-                              {g.items.map(k => (
-                                <option key={k.id} value={k.id}>{k.kode} — {k.nama}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+
+                      {/* Langkah 1 — Kategori Utama */}
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-semibold text-[#6e7977] uppercase tracking-wider flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-[#0f766e] text-white text-[9px] flex items-center justify-center font-bold shrink-0">1</span>
+                          Kategori Utama
+                        </p>
+                        <div className="relative">
+                          <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
+                          <select
+                            className="w-full rounded-[10px] border border-[#CBD5E1] bg-white pl-8 pr-8 py-2.5 text-sm text-[#181c1c] focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all appearance-none"
+                            value={selectedGroupKey}
+                            onChange={e => {
+                              setSelectedGroupKey(e.target.value)
+                              setValue('id_klasifikasi', '')
+                            }}
+                          >
+                            <option value="">Pilih kategori utama...</option>
+                            {grouped.map(g => (
+                              <option key={g.key} value={g.key}>{g.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
+                        </div>
                       </div>
-                      {errors.id_klasifikasi && <p className="text-xs text-[#ba1a1a]">⚠ {errors.id_klasifikasi.message}</p>}
+
+                      {/* Langkah 2 — Sub-Klasifikasi */}
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-semibold text-[#6e7977] uppercase tracking-wider flex items-center gap-1.5">
+                          <span className={`w-4 h-4 rounded-full text-white text-[9px] flex items-center justify-center font-bold shrink-0 transition-colors ${selectedGroupKey ? 'bg-[#0f766e]' : 'bg-[#bdc9c6]'}`}>2</span>
+                          Sub-Klasifikasi
+                        </p>
+                        <div className="relative">
+                          <select
+                            className={`w-full rounded-[10px] border pl-4 pr-8 py-2.5 text-sm focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all appearance-none ${
+                              selectedGroupKey
+                                ? 'border-[#CBD5E1] bg-white text-[#181c1c]'
+                                : 'border-[#e5e9e7] bg-[#f1f4f3] text-[#9ca3af] cursor-not-allowed'
+                            }`}
+                            disabled={!selectedGroupKey}
+                            {...register('id_klasifikasi')}
+                          >
+                            <option value="">{selectedGroupKey ? 'Pilih sub-klasifikasi...' : '— Pilih kategori dahulu —'}</option>
+                            {subItems.map(k => (
+                              <option key={k.id} value={k.id}>{k.kode} — {k.nama}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
+                        </div>
+                        {errors.id_klasifikasi && <p className="text-xs text-[#ba1a1a]">⚠ {errors.id_klasifikasi.message}</p>}
+                      </div>
+
+                      {/* Badge kode terpilih */}
+                      {watchedKlas && (() => {
+                        const sel = subItems.find(k => k.id === watchedKlas)
+                        return sel ? (
+                          <div className="flex items-center gap-2 px-3 py-2 bg-[#f0fdf4] border border-[#86efac] rounded-[10px]">
+                            <CheckCircle2 size={13} className="text-[#16a34a] shrink-0" />
+                            <span className="text-xs font-mono font-bold text-[#005c55] shrink-0">{sel.kode}</span>
+                            <span className="text-xs text-[#6e7977]">—</span>
+                            <span className="text-xs text-[#181c1c] font-medium truncate">{sel.nama}</span>
+                          </div>
+                        ) : null
+                      })()}
                     </div>
                   )}
 
@@ -480,7 +540,7 @@ function KeluarModal({ open, onClose, editing, onSave }: {
                       <PenLine size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7977] pointer-events-none" />
                       <input
                         type="text"
-                        placeholder="Contoh: 005/BPKAD/V/2026"
+                        placeholder="Contoh: 100.3.3.2/BPKAD/V/2026"
                         className="w-full rounded-[10px] border border-[#CBD5E1] bg-white pl-8 pr-4 py-2.5 text-sm font-mono text-[#181c1c] placeholder:text-[#bdc9c6] placeholder:font-sans focus:outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/15 transition-all"
                         {...register('nomor_surat_manual')}
                       />

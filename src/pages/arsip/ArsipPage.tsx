@@ -13,6 +13,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
+import { fetchAllKlasifikasi } from '@/lib/klasifikasi'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
@@ -461,7 +462,7 @@ export default function ArsipPage() {
 
   const { data: klasifikasiList = [] } = useQuery({
     queryKey: ['klasifikasi'],
-    queryFn: async () => { const { data } = await supabase.from('klasifikasi').select('*').order('kode'); return (data as Klasifikasi[]) ?? [] },
+    queryFn: async () => fetchAllKlasifikasi<Klasifikasi>(),
   })
 
   const { data: jraList = [] } = useQuery({

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -70,27 +71,95 @@ const sifatBadge = (sifat: string) => {
   return <Badge variant={v} size="sm">{l}</Badge>
 }
 
-const masukStatusBadge = (s: string) => {
-  const map: Record<string, { v: 'info' | 'warning' | 'success' | 'neutral'; l: string; icon: React.ReactNode }> = {
-    baru:        { v: 'info',    l: 'Baru',       icon: <Inbox size={11} /> },
-    diproses:    { v: 'warning', l: 'Diproses',   icon: <Clock size={11} /> },
-    selesai:     { v: 'success', l: 'Selesai',    icon: <CheckCircle2 size={11} /> },
-    diarsipkan:  { v: 'neutral', l: 'Diarsipkan', icon: <Archive size={11} /> },
-  }
-  const { v, l, icon } = Object.hasOwn(map, s) ? map[s] : { v: 'neutral' as const, l: s, icon: null }
-  return <Badge variant={v} size="sm">{icon} {l}</Badge>
-}
+// ─── Status dropdown (clickable badge) ───────────────────────────────────────
+type StatusOption = { key: string; label: string; textColor: string; bgColor: string; icon: React.ReactNode }
 
-const keluarStatusBadge = (s: string) => {
-  type E = { v: 'neutral' | 'warning' | 'success' | 'info'; l: string; icon: React.ReactNode }
-  const entries: [string, E][] = [
-    ['draft',        { v: 'neutral', l: 'Draft',        icon: <FileText size={11} /> }],
-    ['menunggu_ttd', { v: 'warning', l: 'Menunggu TTD', icon: <Clock size={11} /> }],
-    ['terkirim',     { v: 'success', l: 'Terkirim',     icon: <Send size={11} /> }],
-    ['diarsipkan',   { v: 'info',    l: 'Diarsipkan',   icon: <Archive size={11} /> }],
-  ]
-  const { v, l, icon } = entries.find(([k]) => k === s)?.[1] ?? { v: 'neutral' as const, l: s, icon: null }
-  return <Badge variant={v} size="sm">{icon} {l}</Badge>
+const MASUK_STATUS_OPTIONS: StatusOption[] = [
+  { key: 'baru',       label: 'Baru',       textColor: 'text-[#1d4ed8]', bgColor: 'bg-[#dbeafe]', icon: <Inbox size={10} /> },
+  { key: 'diproses',   label: 'Diproses',   textColor: 'text-[#d97706]', bgColor: 'bg-[#fef3c7]', icon: <Clock size={10} /> },
+  { key: 'selesai',    label: 'Selesai',    textColor: 'text-[#15803d]', bgColor: 'bg-[#dcfce7]', icon: <CheckCircle2 size={10} /> },
+  { key: 'diarsipkan', label: 'Diarsipkan', textColor: 'text-[#6e7977]', bgColor: 'bg-[#f1f4f3]', icon: <Archive size={10} /> },
+]
+
+const KELUAR_STATUS_OPTIONS: StatusOption[] = [
+  { key: 'draft',        label: 'Draft',        textColor: 'text-[#6e7977]', bgColor: 'bg-[#f1f4f3]', icon: <FileText size={10} /> },
+  { key: 'menunggu_ttd', label: 'Menunggu TTD', textColor: 'text-[#d97706]', bgColor: 'bg-[#fef3c7]', icon: <Clock size={10} /> },
+  { key: 'terkirim',     label: 'Terkirim',     textColor: 'text-[#15803d]', bgColor: 'bg-[#dcfce7]', icon: <Send size={10} /> },
+  { key: 'diarsipkan',   label: 'Diarsipkan',   textColor: 'text-[#1d4ed8]', bgColor: 'bg-[#dbeafe]', icon: <Archive size={10} /> },
+]
+
+function StatusDropdown({ id, status, options, onUpdate, pending }: {
+  id: string; status: string; options: StatusOption[]
+  onUpdate: (id: string, newStatus: string) => void; pending?: boolean
+}) {
+  const [open, setOpen]   = useState(false)
+  const [pos, setPos]     = useState({ top: 0, left: 0 })
+  const btnRef            = useRef<HTMLButtonElement>(null)
+  const menuRef           = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node) && !btnRef.current?.contains(e.target as Node))
+        setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  function handleOpen() {
+    if (pending) return
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left })
+    }
+    setOpen(o => !o)
+  }
+
+  const cur = options.find(o => o.key === status)
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={handleOpen}
+        disabled={pending}
+        title="Klik untuk ubah status"
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border border-transparent transition-all ${
+          pending ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:brightness-95 hover:shadow-sm'
+        } ${cur?.bgColor ?? 'bg-[#f1f4f3]'} ${cur?.textColor ?? 'text-[#6e7977]'}`}
+      >
+        {cur?.icon}
+        <span>{cur?.label ?? status}</span>
+        <ChevronDown size={9} className="opacity-60 ml-0.5" />
+      </button>
+
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="bg-white rounded-xl shadow-xl border border-[#e5e9e7] py-1.5 min-w-[170px]"
+        >
+          <p className="px-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wider">Ubah Status</p>
+          {options.map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => { onUpdate(id, opt.key); setOpen(false) }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors ${
+                opt.key === status ? 'bg-[#f7faf8]' : 'hover:bg-[#f7faf8]'
+              }`}
+            >
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold ${opt.bgColor} ${opt.textColor}`}>
+                {opt.icon} {opt.label}
+              </span>
+              {opt.key === status && <CheckCircle2 size={11} className="ml-auto text-[#0f766e]" />}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  )
 }
 
 // ─── Surat Masuk Modal ────────────────────────────────────────────────────────
@@ -881,6 +950,19 @@ export default function SuratPage() {
     onError: (e) => showError('Gagal mengarsipkan', e instanceof Error ? e.message : 'Terjadi kesalahan'),
   })
 
+  const updateStatusMut = useMutation({
+    mutationFn: async ({ id, type, status }: { id: string; type: 'masuk' | 'keluar'; status: string }) => {
+      const table = type === 'masuk' ? 'surat_masuk' : 'surat_keluar'
+      const { error } = await supabase.from(table).update({ status }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: [vars.type === 'masuk' ? 'surat_masuk' : 'surat_keluar'] })
+      showSuccess('Status diperbarui', '')
+    },
+    onError: (e) => showError('Gagal ubah status', e instanceof Error ? e.message : 'Terjadi kesalahan'),
+  })
+
   // ── Filtered ──
   const filteredMasuk = useMemo(() => {
     let r = masukList
@@ -1070,7 +1152,15 @@ export default function SuratPage() {
                           </td>
                           <td className="px-4 py-3 text-xs text-[#3e4947]">{formatDate(item.tanggal_terima)}</td>
                           <td className="px-4 py-3">{sifatBadge(item.sifat)}</td>
-                          <td className="px-4 py-3">{masukStatusBadge(item.status)}</td>
+                          <td className="px-4 py-3">
+                            <StatusDropdown
+                              id={item.id}
+                              status={item.status}
+                              options={MASUK_STATUS_OPTIONS}
+                              onUpdate={(id, status) => updateStatusMut.mutate({ id, type: 'masuk', status })}
+                              pending={updateStatusMut.isPending}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               {item.id_arsip
@@ -1119,7 +1209,15 @@ export default function SuratPage() {
                           </td>
                           <td className="px-4 py-3 text-xs text-[#3e4947]">{formatDate(item.tanggal_surat)}</td>
                           <td className="px-4 py-3">{sifatBadge(item.sifat)}</td>
-                          <td className="px-4 py-3">{keluarStatusBadge(item.status)}</td>
+                          <td className="px-4 py-3">
+                            <StatusDropdown
+                              id={item.id}
+                              status={item.status}
+                              options={KELUAR_STATUS_OPTIONS}
+                              onUpdate={(id, status) => updateStatusMut.mutate({ id, type: 'keluar', status })}
+                              pending={updateStatusMut.isPending}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               {item.id_arsip

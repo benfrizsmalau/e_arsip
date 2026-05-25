@@ -235,11 +235,23 @@ function KeluarModal({ open, onClose, editing, onSave }: {
 
   const watchedKlas = watch('id_klasifikasi')
 
-  // Initialize tujuan tags when editing changes
+  // Reset seluruh form saat editing berubah (defaultValues hanya dibaca sekali saat mount)
   useEffect(() => {
+    if (editing) {
+      reset({
+        tujuan: editing.tujuan,
+        id_klasifikasi: (editing as any).id_klasifikasi ?? '',
+        tanggal_surat: editing.tanggal_surat,
+        perihal: editing.perihal,
+        sifat: editing.sifat,
+        penandatangan: editing.penandatangan ?? '',
+        nomor_surat_manual: editing.nomor_surat ?? '',
+      })
+    } else {
+      reset({ sifat: 'biasa', tanggal_surat: new Date().toISOString().slice(0, 10) })
+    }
     const tags = editing ? parseTujuanToTags(editing.tujuan) : []
     setTujuanTags(tags)
-    setValue('tujuan', tags.length > 0 ? JSON.stringify(tags) : '', { shouldValidate: false })
   }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync tujuan tags → form field value
